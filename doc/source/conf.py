@@ -10,9 +10,14 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
-import os
+#import os
+
 import sys
-sys.path.insert(0, os.path.abspath(os.path.split(__file__)[0] + '../../'))
+import pathlib
+#sys.path.insert(0, os.path.abspath(os.path.split(__file__)[0] + '../../'))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+#from sphinx.cmd import build
+#build.main(sys.argv)
 
 import lib
 #import lib.inflationmatrix
