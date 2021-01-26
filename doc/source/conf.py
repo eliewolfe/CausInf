@@ -77,9 +77,9 @@ autodoc_default_options = {
 add_module_names = False
 
 # A list of prefixs that are ignored when creating the module index. (new in Sphinx 0.6)
-modindex_common_prefix = ["lib."]
+modindex_common_prefix = ["inflation."]
 
-#doctest_global_setup = "import networkx as nx"
+#doctest_global_setup = "import inflation"
 
 # The suffix of source filenames.
 source_suffix = ".rst"
