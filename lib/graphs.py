@@ -6,7 +6,7 @@ Learning all the relevant properties of the inflation graph.
 
 import numpy as np
 from .dimino import dimino_wolfe
-# from igraph import *
+#from igraph import *
 from .quickgraph import LearnParametersFromGraph
 from .utilities import MoveToFront
 
@@ -78,8 +78,9 @@ def GenerateDeterminismAssumptions(determinism_checks, latent_count, group_gener
 
 
 
+
 def LearnInflationGraphParameters(g, inflation_order):
-    names, parents_of, roots_of, determinism_checks = LearnParametersFromGraph(g)
+    names, parents_of, roots_of, determinism_checks, filtered_determinism_checks = LearnParametersFromGraph(g)
     # print(names)
     graph_structure = list(filter(None, parents_of))
     obs_count = len(graph_structure)
@@ -96,3 +97,4 @@ def LearnInflationGraphParameters(g, inflation_order):
     group_elem = np.array(dimino_wolfe(group_generators.reshape((-1, num_vars))))
     det_assumptions = GenerateDeterminismAssumptions(determinism_checks, latent_count, group_generators, exp_set)
     return obs_count, num_vars, exp_set, group_elem, det_assumptions, names[latent_count:]
+

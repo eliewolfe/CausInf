@@ -103,8 +103,32 @@ def LearnSomeInflationGraphParameters(g, inflation_order):
     num_vars = inflationcopies.sum()
     return obs_count, num_vars, names[latent_count:]
 
-"""
-TGraph=Graph.Formula("U1->A:B:C:D,D->C,C->X,A->X,B->X")
+def FindBestScreeningOffSet(root, observed, g):
+    screeningset = np.intersect1d(root["children"], observed["ancestors"]).tolist()
+    validvars=[]
+    for sidx in screeningset:
+                        
+        p=paths_from_to(g, g.vs[sidx], observed)
+                
+                        
+        for pat in p:
+                            
+            pat.remove(sidx)
+            check=False
+                            
+            for v in screeningset:
+                check=check | any(np.array(pat) == v)
+                                
+        if check == False:
+                                
+            validvars.append(sidx)
+          
+    validvars.append(observed.index)
+    return validvars
+
+
+
+TGraph=Graph.Formula("U1->A:C,U2->A:B:D,U3->B:C:D,A->B,C->D")
 #TGraph=Graph.Formula("U1->A:B:C:D,D->C,C->X,A->X,B->X,D->X")
 #TGraph=Graph.Formula("U1->X->A->B,U2->A:B")
 
@@ -125,16 +149,17 @@ nonroot_vertices = verts.select(isroot=False).indices
 verts["roots_of"] = [np.intersect1d(anc, root_vertices).tolist() for anc in g.vs["ancestors"]]
 
 
-determinism_checks = [(root, FindBestScreeningOffSet(verts[root], v,g)) for v in g.vs[has_grandparents] for root in np.setdiff1d(v["roots_of"], v["parents"])]
+filtered_determinism_checks = [(root, FindBestScreeningOffSet(verts[root], v,g)) for v in g.vs[has_grandparents] for root in np.setdiff1d(v["roots_of"], v["parents"])]
 
-print(determinism_checks)
+print(filtered_determinism_checks)
 
-
+"""
 p=paths_from_to(g, verts[3], verts[5])
 print(p)
-
-
+"""
+"""
 names,parents,roots_of,determinism_checks, filtered_determinism_checks=LearnParametersFromGraph(TGraph, hasty=False)
+
 
 print(names)
 print(parents)
@@ -142,6 +167,76 @@ print(roots_of)
 print(determinism_checks)
 print(filtered_determinism_checks)
 """
+inflation_order=2
+ExSets=[]
+for screenoffs in filtered_determinism_checks:
+    
+    Y=screenoffs[1][-1]
+    Xs=screenoffs[1][:-1]
+    U1=screenoffs[0]
+    roots=verts["roots_of"][Y]
+    notroots=list(np.setdiff1d(roots,root_vertices))
+    
+    for X in Xs:
+               
+        U2=list(np.setdiff1d(verts[X]["ancestors"],[X,U1]))
+        U3=list(np.setdiff1d(roots,[U1]+U2))
+        
+        DescendantsU2=[]
+        
+        for i in U2:
+            DescendantsU2.extend(verts[i]["descendants"])
+        DescendantsU2=list(set(DescendantsU2))
+            
+        Z=list(np.setdiff1d(nonroot_vertices,DescendantsU2+[Y]))
+        
+        copies=list(np.arange(inflation_order)+1)
+    
+        for z in Z:
+            for cU1U2 in copies:
+                
+                Xtemplate=np.full(len(roots),cU1U2)
+                Xtemplate[U3]=-1
+            
+                Ytemplate=np.full(len(roots),cU1U2)
+                
+                Ztemplate=np.full(len(roots),cU1U2)
+                Ztemplate[U2]=-1
+                
+                if notroots != []:
+                    Xtemplate[notroots]=-1
+                    Ytemplate[notroots]=-1
+                    Ztemplate[notroots]=-1
+                
+                for u3 in U3:
+                    for cU3 in copies:
+                        if cU3 != cU1U2:
+                            
+                            Zcopy=Ztemplate
+                            Zcopy[u3]=cU3
+                        
+                            Xcopy=''.join([''.join(str(i)) for i in list(Xtemplate)])
+                            Ycopy=''.join([''.join(str(i)) for i in list(Ytemplate)])
+                            Zcopy=''.join([''.join(str(i)) for i in list(Zcopy)])
+                            
+                            Xcopy=Xcopy.replace('-1','_')
+                            Ycopy=Ycopy.replace('-1','_')
+                            Zcopy=Zcopy.replace('-1','_')
+                            
+                            Xcopy=verts[X]["name"]+'['+Xcopy+']'
+                            Ycopy=verts[Y]["name"]+'['+Ycopy+']'
+                            Zcopy=verts[z]["name"]+'['+Zcopy+']'
+                            
+                            exset=Zcopy+' '+Ycopy+' '+Xcopy
+                            ExSets.append(exset)
+
+print(ExSets)
+
+
+
+
+
+
 
 
 
