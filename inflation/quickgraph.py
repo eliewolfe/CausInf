@@ -7,6 +7,7 @@ Learning a little bit about the inflation graph from the original graph
 import numpy as np
 from igraph import Graph
 
+
 def ToTopologicalOrdering(g):
     return g.permute_vertices(np.argsort(g.topological_sorting('out')).tolist())
 
@@ -15,7 +16,7 @@ def LearnParametersFromGraph(origgraph, hasty=False):
     g = ToTopologicalOrdering(origgraph)
     verts = g.vs
     verts["parents"] = g.get_adjlist('in');
-    verts["children"]=g.get_adjlist('out');
+    verts["children"] = g.get_adjlist('out');
     verts["ancestors"] = [g.subcomponent(i, 'in') for i in g.vs]
     verts["descendants"] = [g.subcomponent(i, 'out') for i in g.vs]
     verts["indegree"] = g.indegree()
@@ -27,66 +28,57 @@ def LearnParametersFromGraph(origgraph, hasty=False):
     root_vertices = verts.select(isroot=True).indices
     nonroot_vertices = verts.select(isroot=False).indices
     verts["roots_of"] = [np.intersect1d(anc, root_vertices).tolist() for anc in verts["ancestors"]]
-    #print(verts["parents"])
-    #de= g.successors(verts)
-    #print(de)
     if hasty:
         return verts["name"], verts["parents"], verts["roots_of"]
     else:
-        def FindScreeningOffSet(root, observed):
-            screeningset = np.intersect1d(root["children"], observed["ancestors"]).tolist()
-            screeningset.append(observed.index)
-            return screeningset
-        
-        def FindBestScreeningOffSet(root, observed, g):
-            screeningset = np.intersect1d(root["children"], observed["ancestors"]).tolist()
+        # def FindScreeningOffSet(root, observed):
+        #    screeningset = np.intersect1d(root["children"], observed["ancestors"]).tolist()
+        #    screeningset.append(observed.index)
+        #    return screeningset
 
+        def DeterminismCheckAndExpressibleSet(roots, observed):
+            """roots is a list of root nodes which can be screened off, observed is a single node, in iGraph.VertexSeq format.
+            The output will be a tuple of 5 lists (except Y is integer, not list):
+            (U1s,Y,Xs,Zs,U3s) with the following meaning:
+            Ys are screened off from U1s by Xs.
+            Zs are variables appearing in an expressible set with {Xs,Y} when U3s is different for Xs and Zs)
+            """
+            children_of_roots = set().union(*roots["children"])
+            screeningset = children_of_roots.intersection(observed["ancestors"])
+            Xs = screeningset.copy()
             for sidx in screeningset:
-
-                screeningset_rest = set(screeningset)
+                screeningset_rest = screeningset.copy()
                 screeningset_rest.remove(sidx)
-                if not all(screeningset_rest.isdisjoint(directed_path) for directed_path in g.get_all_simple_paths(sidx, to=observed)):
-                    screeningset.remove(sidx)
+                if not all(screeningset_rest.isdisjoint(directed_path) for directed_path in
+                           g.get_all_simple_paths(sidx, to=observed)):
+                    Xs.remove(sidx)
 
-            screeningset.append(observed.index)
-            return screeningset
+            U1s = set(roots.indices)
+            Y = observed.index
+            #Xs = screeningset
+            U2s = set().union(*verts[Xs]["roots_of"]).difference(U1s)
 
-        determinism_checks = [(root, FindScreeningOffSet(verts[root], v)) for v in g.vs[has_grandparents] for root in
-                              np.setdiff1d(v["roots_of"], v["parents"])]
-        
-        filtered_determinism_checks = [(root, FindBestScreeningOffSet(verts[root], v,g)) for v in g.vs[has_grandparents] for root in np.setdiff1d(v["roots_of"], v["parents"])]
+            U2s_descendants = set().union(*verts[U2s]["descendants"])
+            observable_nodes_aside_from_Zs = set(Xs)
+            observable_nodes_aside_from_Zs.add(Y)
+            Zs = set(nonroot_vertices).difference(U2s_descendants).difference(observable_nodes_aside_from_Zs)
 
-        #We are going to want to adjust this code to handle screening off of multiple roots at once.
-        #Should we be concerned about multiple root screening in terms of determinism checks? YES!!!
-        def FindExpressibleSet(determinism_check, dict_of_roots, dict_of_descendants):
-            Y = determinism_check[1][-1]
-            Xs = determinism_check[1][:-1]
-            U1 = determinism_check[0]
-            roots = dict_of_roots[Y]
+            roots_of_Y_aside_from_U1s = set(verts[Y]["roots_of"]).difference(U1s)
+            roots_of_Zs = set().union(*verts[Zs]["roots_of"])
+            U3YZ = roots_of_Y_aside_from_U1s.intersection(roots_of_Zs)
 
-            U2 = set([])
-            for X in Xs:
-                U2.update(dict_of_roots[X])
-            U2.remove(U1)
+            #return (U1s,Y,Xs,Zs,U3YZ)
+            return tuple(map(list,(U1s, [Y], Xs, Zs, U3YZ)))
 
-            Zs = set(nonroot_vertices)
-            Zs.remove(Y)
-            Zs.difference_update(Xs)
-            for u2 in U2:
-                Zs.difference_update(dict_of_descendants[u2])
+        from itertools import chain, combinations
+        def PossibleScreenings(v):
+            "v is presumed to be a iGraph vertex object."
+            screenable_roots = np.setdiff1d(v["roots_of"], v["parents"])
+            return [DeterminismCheckAndExpressibleSet(verts[subroots], v) for r in np.arange(1, screenable_roots.size + 1) for subroots in combinations(screenable_roots, r)]
 
-            U3YZ = set([])
-            for Z in Zs:
-                U3YZ.update(dict_of_roots[Z])
-            U3YZ.intersection_update(dict_of_roots[Y])
-            U3YZ.remove(U1)
-            U3YZ.difference_update(U2)
+        determinism_checks_and_expressible_sets = list(chain.from_iterable([PossibleScreenings(v) for v in g.vs[has_grandparents]]))
 
-            return tuple([list(U3YZ),(Y,list(Zs),Xs)])
-
-        expressible_sets = [FindExpressibleSet(determinism_check, verts["roots_of"], verts["descendants"]) for determinism_check in filtered_determinism_checks]
-        
-    return verts["name"], verts["parents"], verts["roots_of"], determinism_checks, filtered_determinism_checks, expressible_sets
+        return verts["name"], verts["parents"], verts["roots_of"], determinism_checks_and_expressible_sets
 
 
 def LearnSomeInflationGraphParameters(g, inflation_order):
@@ -102,109 +94,25 @@ def LearnSomeInflationGraphParameters(g, inflation_order):
     return obs_count, num_vars, names[latent_count:]
 
 
+def QuickGraphAssessment(g):
+    names, parents_of, roots_of, screening_off_relationships = LearnParametersFromGraph(g, hasty=False)
+    graph_structure = list(filter(None, parents_of))
+    print("For the graph who's parental structure is given by:")
+    print([':'.join(np.take(names, vals)) + '->' + np.take(names, idx) for idx, vals in enumerate(graph_structure)])
+    print("We identify the following screening-off relationship relevant to enforcing determinism and expressible sets:")
+    for screening in screening_off_relationships:
+        print(tuple(np.take(names,{
+            set: lambda s: list(s),
+            int: lambda s: [s],
+            list: lambda s: s}[type(indices)](indices)).tolist() for indices in screening))
+    print('\u2500'*80+'\n')
 
 if __name__ == '__main__':
-
-    TGraph=Graph.Formula("U1->A:C,U2->A:B:D,U3->B:C:D,A->B,C->D")
-    #TGraph=Graph.Formula("U1->A:B:C:D,D->C,C->X,A->X,B->X")
-    #TGraph=Graph.Formula("U1->X->A->B,U2->A:B")
-
-    g = ToTopologicalOrdering(TGraph)
-    verts = g.vs
-    verts["parents"] = g.get_adjlist('in');
-    verts["children"]=g.get_adjlist('out');
-    verts["ancestors"] = [g.subcomponent(i, 'in') for i in g.vs]
-    verts["descendants"] = [g.subcomponent(i, 'out') for i in g.vs]
-    verts["indegree"] = g.indegree()
-    # verts["outdegree"]=g.outdegree() #Not needed
-    verts["grandparents"] = g.neighborhood(None, order=2, mode='in', mindist=2)
-    # verts["parents_inclusive"]=g.neighborhood(None, order=1, mode='in', mindist=0) #Not needed
-    has_grandparents = [idx for idx, v in enumerate(verts["grandparents"]) if len(v) >= 1]
-    verts["isroot"] = [0 == i for i in g.vs["indegree"]]
-    root_vertices = verts.select(isroot=True).indices
-    nonroot_vertices = verts.select(isroot=False).indices
-    verts["roots_of"] = [np.intersect1d(anc, root_vertices).tolist() for anc in verts["ancestors"]]
-
-
-    #filtered_determinism_checks = [(root, FindBestScreeningOffSet(verts[root], v,g)) for v in g.vs[has_grandparents] for root in np.setdiff1d(v["roots_of"], v["parents"])]
-
-    names, parents_dict, roots_dict, determinism_checks, filtered_determinism_checks, expressible_sets = LearnParametersFromGraph(TGraph)
-    print(names)
-    print(determinism_checks)
-    print(filtered_determinism_checks)
-    print(expressible_sets)
-
-    inflation_order=2
-    ExSets=[]
-    for screenoffs in filtered_determinism_checks:
-
-        Y=screenoffs[1][-1]
-        Xs=screenoffs[1][:-1]
-        U1=screenoffs[0]
-        roots=verts["roots_of"][Y]
-        notroots=list(np.setdiff1d(roots,root_vertices))
-
-        for X in Xs:
-
-            U2=list(np.setdiff1d(verts[X]["ancestors"],[X,U1]))
-            U3=list(np.setdiff1d(roots,[U1]+U2))
-
-            DescendantsU2=[]
-
-            for i in U2:
-                DescendantsU2.extend(verts[i]["descendants"])
-            DescendantsU2=list(set(DescendantsU2))
-
-            Z=list(np.setdiff1d(nonroot_vertices,DescendantsU2+[Y]))
-
-            copies=list(np.arange(inflation_order)+1)
-
-            for z in Z:
-                for cU1U2 in copies:
-
-                    Xtemplate=np.full(len(roots),cU1U2)
-                    Xtemplate[U3]=-1
-
-                    Ytemplate=np.full(len(roots),cU1U2)
-
-                    Ztemplate=np.full(len(roots),cU1U2)
-                    Ztemplate[U2]=-1
-
-                    if notroots != []:
-                        Xtemplate[notroots]=-1
-                        Ytemplate[notroots]=-1
-                        Ztemplate[notroots]=-1
-
-                    for u3 in U3:
-                        for cU3 in copies:
-                            if cU3 != cU1U2:
-
-                                Zcopy=Ztemplate
-                                Zcopy[u3]=cU3
-
-                                Xcopy=''.join([''.join(str(i)) for i in list(Xtemplate)])
-                                Ycopy=''.join([''.join(str(i)) for i in list(Ytemplate)])
-                                Zcopy=''.join([''.join(str(i)) for i in list(Zcopy)])
-
-                                Xcopy=Xcopy.replace('-1','_')
-                                Ycopy=Ycopy.replace('-1','_')
-                                Zcopy=Zcopy.replace('-1','_')
-
-                                Xcopy=verts[X]["name"]+'['+Xcopy+']'
-                                Ycopy=verts[Y]["name"]+'['+Ycopy+']'
-                                Zcopy=verts[z]["name"]+'['+Zcopy+']'
-
-                                exset=Zcopy+' '+Ycopy+' '+Xcopy
-                                ExSets.append(exset)
-
-    print(ExSets)
-
-
-
-
-
-
-
-
-
-
+    InstrumentalGraph = Graph.Formula("U1->X->A->B,U2->A:B")
+    Evans14a = Graph.Formula("U1->A:C,U2->A:B:D,U3->B:C:D,A->B,C->D")
+    Evans14b = Graph.Formula("U1->A:C,U2->B:C:D,U3->A:D,A->B,B:C->D")
+    Evans14c = Graph.Formula("U1->A:C,U2->B:D,U3->A:D,A->B->C->D")
+    IceCreamGraph = Graph.Formula("U1->A,U2->B:D,U3->C:D,A->B:C,B->D")
+    BiconfoundingInstrumental = Graph.Formula("U1->A,U2->B:C,U3->B:D,A->B,B->C:D")
+    [QuickGraphAssessment(g) for g in (InstrumentalGraph,Evans14a,Evans14b,Evans14c,IceCreamGraph,BiconfoundingInstrumental)]
+    [QuickGraphAssessment(g) for g in (InstrumentalGraph,Evans14a,Evans14b,Evans14c,IceCreamGraph,BiconfoundingInstrumental)]

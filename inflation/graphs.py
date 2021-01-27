@@ -9,6 +9,7 @@ from .dimino import dimino_wolfe
 #from igraph import *
 from .quickgraph import LearnParametersFromGraph
 from .utilities import MoveToFront
+from functools import reduce #for permutation composition
 
 
 def GenerateCanonicalExpressibleSet(inflation_order, inflation_depths, offsets):
@@ -57,30 +58,59 @@ def GenerateInflationGroupGenerators(inflation_order, latent_count, root_structu
             global_permutation = np.transpose(global_permutation, tuple(inversetranspose))
             global_permutation = np.hstack(
                 tuple(global_permutation[i][contractings[i]].ravel() for i in np.arange(obs_count)))
-            # global_permutationOLD=Deduplicate(np.ravel(global_permutation))   #Deduplication has been replaced with intelligent extraction.
-            # print(np.all(global_permutation==global_permutationOLD))
             group_generators[latent_to_explore, gen_idx] = global_permutation
     return group_generators
 
 
 def GenerateDeterminismAssumptions(determinism_checks, latent_count, group_generators, exp_set):
-    one_generator_per_root = group_generators[:, 0]
-    det_assumptions = list();
-    for pair in determinism_checks:
-        flatset = exp_set[list(np.array(pair[1]) - latent_count)] #TODO: change to np.take
-        symop = one_generator_per_root[pair[0]]
-        rule = np.vstack((flatset, symop[flatset])).T.astype('uint32')
+    """#Updating DeterminismAssumptions data structure to accomodate multiple root variables.
+    Recall that a determinism check is passed in the form of (U1s,Ys,Xs,Zs,U3s) with the following meaning:
+            Ys are screened off from U1s by Xs. (Ys is always a list with only one element.)
+            Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)"""
+    def GenerateOneDeterminismAssumption(screening):
+        U1s = screening[0]
+        XsY = screening[2]+screening[1]
+        observable_indices = np.array(XsY) - latent_count
+        flatset_original_world = np.take(exp_set, observable_indices)
+        symops = group_generators[U1s, 0]  # Now a LIST of lists
+        flatset_new_world = np.take(reduce(np.take, symops), flatset_original_world)
+        rule = np.vstack((flatset_original_world, flatset_new_world)).T.astype('uint32')
         rule = rule[:-1, :].T.tolist() + rule[-1, :].T.tolist()
-        det_assumptions.append(rule)
-    return det_assumptions
+        return rule
+
+    return list(map(GenerateOneDeterminismAssumption,determinism_checks))
+
+    #
+    #
+    # one_generator_per_root = group_generators[:, 0]
+    # det_assumptions = list();
+    # # for pair in determinism_checks:
+    # #     flatset = exp_set[list(np.array(pair[1]) - latent_count)] #TODO: change to np.take
+    # #     symop = one_generator_per_root[pair[0]]
+    # #     rule = np.vstack((flatset, symop[flatset])).T.astype('uint32')
+    # #     rule = rule[:-1, :].T.tolist() + rule[-1, :].T.tolist()
+    # #     det_assumptions.append(rule)
+    # for screening in determinism_checks:
+    #     U1s = screening[0]
+    #     Xs = screening[2]
+    #     Y = screening[1][0]
+    #     observable_indices = np.array(Xs.append(Y)) - latent_count
+    #     flatset_original_world = np.take(exp_set,observable_indices)
+    #     symops = np.take(one_generator_per_root,U1s) #Now a LIST of lists
+    #     flatset_new_world = reduce(np.take, symops, initializer=flatset_original_world)
+    #     rule = np.vstack((flatset_original_world, flatset_new_world)).T.astype('uint32')
+    #     rule = rule[:-1, :].T.tolist() + rule[-1, :].T.tolist()
+    #     det_assumptions.append(rule)
+    # return det_assumptions
 
 # We should add a new function to give expressible sets. Ideally with symbolic output.
 
 
 
 
+
 def LearnInflationGraphParameters(g, inflation_order):
-    names, parents_of, roots_of, determinism_checks, filtered_determinism_checks = LearnParametersFromGraph(g)
+    names, parents_of, roots_of, determinism_checks = LearnParametersFromGraph(g)
     # print(names)
     graph_structure = list(filter(None, parents_of))
     obs_count = len(graph_structure)
