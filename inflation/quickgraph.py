@@ -114,5 +114,5 @@ if __name__ == '__main__':
     Evans14c = Graph.Formula("U1->A:C,U2->B:D,U3->A:D,A->B->C->D")
     IceCreamGraph = Graph.Formula("U1->A,U2->B:D,U3->C:D,A->B:C,B->D")
     BiconfoundingInstrumental = Graph.Formula("U1->A,U2->B:C,U3->B:D,A->B,B->C:D")
-    [QuickGraphAssessment(g) for g in (InstrumentalGraph,Evans14a,Evans14b,Evans14c,IceCreamGraph,BiconfoundingInstrumental)]
+    TriangleGraph = Graph.Formula("X->A,Y->A:B,Z->B:C,X->C")
     [QuickGraphAssessment(g) for g in (InstrumentalGraph,Evans14a,Evans14b,Evans14c,IceCreamGraph,BiconfoundingInstrumental)]
