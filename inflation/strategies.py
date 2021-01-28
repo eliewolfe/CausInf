@@ -41,6 +41,7 @@ def ValidColumnOrbits(card, num_vars, group_elem, det_assumptions=[]):
 
 
 def ValidColumnOrbitsFromGraph(g, inflation_order, card):
-    obs_count, num_vars, exp_set, group_elem, det_assumptions, names = LearnInflationGraphParameters(g, inflation_order)
+    #LearnInflationGraphParameters now returns multiple expressible sets, but it doesn't matter here.
+    obs_count, num_vars, exp_sets, group_elem, det_assumptions, names = LearnInflationGraphParameters(g, inflation_order)
     print(names)
     return ValidColumnOrbits(card, num_vars, group_elem, det_assumptions)

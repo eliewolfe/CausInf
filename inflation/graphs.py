@@ -3,12 +3,12 @@
 """
 Learning all the relevant properties of the inflation graph.
 """
-
+from __future__ import absolute_import
 import numpy as np
-from .dimino import dimino_wolfe
+from inflation.dimino import dimino_wolfe
 #from igraph import *
-from .quickgraph import LearnParametersFromGraph
-from .utilities import MoveToFront
+from inflation.quickgraph import LearnParametersFromGraph
+from inflation.utilities import MoveToFront
 from functools import reduce #for permutation composition
 
 
@@ -63,45 +63,42 @@ def GenerateInflationGroupGenerators(inflation_order, latent_count, root_structu
 
 
 def GenerateDeterminismAssumptions(determinism_checks, latent_count, group_generators, exp_set):
-    """#Updating DeterminismAssumptions data structure to accomodate multiple root variables.
+    """#Updating DeterminismAssumptions data structure to accommodate multiple root variables.
     Recall that a determinism check is passed in the form of (U1s,Ys,Xs,Zs,U3s) with the following meaning:
             Ys are screened off from U1s by Xs. (Ys is always a list with only one element.)
             Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)"""
     def GenerateOneDeterminismAssumption(screening):
         U1s = screening[0]
-        XsY = screening[2]+screening[1]
-        observable_indices = np.array(XsY) - latent_count
-        flatset_original_world = np.take(exp_set, observable_indices)
+        XsY = np.array(list(screening[2])+list(screening[1])) - latent_count
+        flatset_original_world = np.take(exp_set, XsY)
         symops = group_generators[U1s, 0]  # Now a LIST of lists
         flatset_new_world = np.take(reduce(np.take, symops), flatset_original_world)
         rule = np.vstack((flatset_original_world, flatset_new_world)).T.astype('uint32')
         rule = rule[:-1, :].T.tolist() + rule[-1, :].T.tolist()
         return rule
 
-    return list(map(GenerateOneDeterminismAssumption,determinism_checks))
+    return list(map(GenerateOneDeterminismAssumption, determinism_checks))
 
-    #
-    #
-    # one_generator_per_root = group_generators[:, 0]
-    # det_assumptions = list();
-    # # for pair in determinism_checks:
-    # #     flatset = exp_set[list(np.array(pair[1]) - latent_count)] #TODO: change to np.take
-    # #     symop = one_generator_per_root[pair[0]]
-    # #     rule = np.vstack((flatset, symop[flatset])).T.astype('uint32')
-    # #     rule = rule[:-1, :].T.tolist() + rule[-1, :].T.tolist()
-    # #     det_assumptions.append(rule)
-    # for screening in determinism_checks:
-    #     U1s = screening[0]
-    #     Xs = screening[2]
-    #     Y = screening[1][0]
-    #     observable_indices = np.array(Xs.append(Y)) - latent_count
-    #     flatset_original_world = np.take(exp_set,observable_indices)
-    #     symops = np.take(one_generator_per_root,U1s) #Now a LIST of lists
-    #     flatset_new_world = reduce(np.take, symops, initializer=flatset_original_world)
-    #     rule = np.vstack((flatset_original_world, flatset_new_world)).T.astype('uint32')
-    #     rule = rule[:-1, :].T.tolist() + rule[-1, :].T.tolist()
-    #     det_assumptions.append(rule)
-    # return det_assumptions
+def GenerateOtherExpressibleSets(screening_off_relations, latent_count, group_generators, exp_set):
+    """New function to identify extra expressible sets.
+    Recall that a screebing relation is passed in the form of (U1s,Ys,Xs,Zs,U3s) with the following meaning:
+            Ys are screened off from U1s by Xs. (Ys is always a list with only one element.)
+            Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)"""
+
+    def GenerateOneExpressibleSet(screening):
+        U3s = screening[4]
+        (Ys, Xs, Zs) = tuple(map(lambda orig_node_indices: np.take(exp_set, np.array(orig_node_indices) - latent_count),
+                                screening[1:4]))
+        #Ys = np.take(exp_set, np.array(screening[1]) - latent_count)
+        #Xs = np.take(exp_set, np.array(screening[2]) - latent_count)
+        #Zs = np.take(exp_set, np.array(screening[3]) - latent_count)
+        symops = group_generators[U3s, 0]  # Now a LIST of lists
+        Zs_new_world = np.take(reduce(np.take, symops), Zs)
+        nonai_exp_set = (Ys.tolist(),Zs_new_world.tolist(),Xs.tolist())
+        return nonai_exp_set
+
+    return list(map(GenerateOneExpressibleSet, filter(lambda screening: len(screening[-1]) > 0, screening_off_relations)))
+
 
 # We should add a new function to give expressible sets. Ideally with symbolic output.
 
@@ -109,8 +106,8 @@ def GenerateDeterminismAssumptions(determinism_checks, latent_count, group_gener
 
 
 
-def LearnInflationGraphParameters(g, inflation_order):
-    names, parents_of, roots_of, determinism_checks = LearnParametersFromGraph(g)
+def LearnInflationGraphParameters(g, inflation_order, extra_expressible=False, debug=False):
+    names, parents_of, roots_of, screening_off_relations = LearnParametersFromGraph(g)
     # print(names)
     graph_structure = list(filter(None, parents_of))
     obs_count = len(graph_structure)
@@ -125,6 +122,31 @@ def LearnInflationGraphParameters(g, inflation_order):
     group_generators = GenerateInflationGroupGenerators(inflation_order, latent_count, root_structure, inflation_depths,
                                                         offsets)
     group_elem = np.array(dimino_wolfe(group_generators.reshape((-1, num_vars))))
-    det_assumptions = GenerateDeterminismAssumptions(determinism_checks, latent_count, group_generators, exp_set)
+    det_assumptions = GenerateDeterminismAssumptions(screening_off_relations, latent_count, group_generators, exp_set)
+    other_expressible_sets = GenerateOtherExpressibleSets(screening_off_relations, latent_count, group_generators, exp_set)
+    if debug:
+        print("For the graph who's parental structure is given by:")
+        print([':'.join(np.take(names, vals)) + '->' + np.take(names, idx) for idx, vals in enumerate(graph_structure)])
+        print("We have "+str(num_vars)+" total inflation graph observable variables.")
+        print("The diagonal expressible set is given by:")
+        print(exp_set)
+        print("And we count "+str(len(other_expressible_sets))+" other expressible sets, namely:")
+        for nonai_exp_set in other_expressible_sets:
+            print(nonai_exp_set)
+        print('\u2500' * 80 + '\n')
+    #TODO: Return exp_sets plural instead of only diagonal instance.
     return obs_count, num_vars, exp_set, group_elem, det_assumptions, names[latent_count:]
+
+
+
+if __name__ == '__main__':
+    from igraph import Graph
+    InstrumentalGraph = Graph.Formula("U1->X->A->B,U2->A:B")
+    Evans14a = Graph.Formula("U1->A:C,U2->A:B:D,U3->B:C:D,A->B,C->D")
+    Evans14b = Graph.Formula("U1->A:C,U2->B:C:D,U3->A:D,A->B,B:C->D")
+    Evans14c = Graph.Formula("U1->A:C,U2->B:D,U3->A:D,A->B->C->D")
+    IceCreamGraph = Graph.Formula("U1->A,U2->B:D,U3->C:D,A->B:C,B->D")
+    BiconfoundingInstrumental = Graph.Formula("U1->A,U2->B:C,U3->B:D,A->B,B->C:D")
+    TriangleGraph = Graph.Formula("X->A,Y->A:B,Z->B:C,X->C")
+    [LearnInflationGraphParameters(g,2, debug=True) for g in (InstrumentalGraph,Evans14a,Evans14b,Evans14c,IceCreamGraph,BiconfoundingInstrumental, TriangleGraph)]
 

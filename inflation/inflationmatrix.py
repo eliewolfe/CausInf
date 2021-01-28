@@ -40,6 +40,7 @@ def GenerateEncodingMonomialToRow(original_cardinality_product,
 
 
 def GenerateEncodingColumnToMonomial(card, num_var, expr_set):
+    #Can be used for off-diagonal expressible sets with no adjustment!
     initialshape = np.full(num_var, card, np.uint)
     ColumnIntegers = GenShapedColumnIntegers(tuple(initialshape))
     ColumnIntegers = ColumnIntegers.transpose(MoveToBack(num_var, np.array(expr_set))).reshape(
@@ -55,11 +56,8 @@ def EncodeA(obs_count, num_vars, valid_column_orbits, expr_set, inflation_order,
     EncodingColumnToMonomial = GenerateEncodingColumnToMonomial(card, num_vars, np.array(expr_set))
     result = EncodingMonomialToRow.take(EncodingColumnToMonomial).take(valid_column_orbits)
     # Once the encoding is done, the order of the columns can be tweaked at will!
-    # result=np.sort(result,axis=0)
     result.sort(axis=0)  # in-place sort
-    # result=result[np.lexsort(result),:]
     return result
-    # return EncodingMonomialToRow[EncodingColumnToMonomial][valid_column_orbits]
 
 
 def SciPyArrayFromOnesPositions(OnesPositions, sort_columns=True):

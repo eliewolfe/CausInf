@@ -66,6 +66,9 @@ def LearnParametersFromGraph(origgraph, hasty=False):
             roots_of_Y_aside_from_U1s = set(verts[Y]["roots_of"]).difference(U1s)
             roots_of_Zs = set().union(*verts[Zs]["roots_of"])
             U3YZ = roots_of_Y_aside_from_U1s.intersection(roots_of_Zs)
+            #Adding a sanity filter:
+            if len(U3YZ) == 0:
+                Zs = set()
 
             #return (U1s,Y,Xs,Zs,U3YZ)
             return tuple(map(list,(U1s, [Y], Xs, Zs, U3YZ)))
