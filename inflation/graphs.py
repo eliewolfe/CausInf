@@ -5,6 +5,12 @@ Learning all the relevant properties of the inflation graph.
 """
 from __future__ import absolute_import
 import numpy as np
+
+if __name__ == '__main__':
+    import sys
+    import pathlib
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
 from inflation.dimino import dimino_wolfe
 #from igraph import *
 from inflation.quickgraph import LearnParametersFromGraph
