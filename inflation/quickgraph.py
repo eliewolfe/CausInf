@@ -49,7 +49,9 @@ def LearnParametersFromGraph(origgraph, hasty=False):
             for sidx in screeningset:
                 screeningset_rest = screeningset.copy()
                 screeningset_rest.remove(sidx)
-                if not all(screeningset_rest.isdisjoint(directed_path) for directed_path in
+                #unblocked_path if screeningset_rest.isdisjoint(directed_path)
+                #sidx is redundant if there are not ANY unblocked paths.
+                if not any(screeningset_rest.isdisjoint(directed_path) for directed_path in
                            g.get_all_simple_paths(sidx, to=observed)):
                     Xs.remove(sidx)
 
