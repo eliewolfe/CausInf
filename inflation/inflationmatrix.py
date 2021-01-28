@@ -169,18 +169,26 @@ def Generate_b_and_counts(Data, inflation_order):
 def FindB(Data, inflation_order):
     return np.multiply(*Generate_b_and_counts(Data, inflation_order))
 
-def MarginalVectorFromGraph(g, inflation_order, data, extra_expressible=False):
+def MarginalOn(data, card, obs_count, marginal):
+    initial_shape = np.full(obs_count, card, np.uint)
+    reshaped_data = np.reshape(data,tuple(initial_shape))
+    return reshaped_data.transpose(MoveToBack(obs_count, np.array(marginal))).reshape(
+            (-1, card ** len(marginal))).sum(axis=0)
+
+def MarginalVectorFromGraph(g, card, inflation_order, card, extra_expressible=False):
     ###WORK IN PROGRESS; still only returns b-vector associated with the diagonal expressible set.###
     if not extra_expressible:
         return FindB(data, inflation_order)
     else:
         b_diagonal_exp_set = FindB(data, inflation_order)
         names, parents_of, roots_of, screening_off_relationships = LearnParametersFromGraph(g, hasty=False)
-        latent_count = len(parents_of) - len(list(filter(None, parents_of)))
-        obs_names=names[latent_count:]
-        screening[1:4]
+        obs_count = len(list(filter(None, parents_of)))
+        latent_count = len(parents_of) - obs_count
+        obs_names = names[latent_count:]
         other_expressible_sets_original = [tuple(map(lambda orig_node_indices: np.array(orig_node_indices) - latent_count,
                                 screening[1:4])) for screening in filter(lambda screening: len(screening[-1]) > 0, screening_off_relations)]
+        #How should we compute the marginal probability?
+        #Given P(ABC) how do we obtain P(AB)P(BC)/P(B) as a vector of appropriate length?
         for eset in other_expressible_sets_original:
             print(tuple(np.take(obs_names, indices).tolist() for indices in eset))
         return b_diagonal_exp_set

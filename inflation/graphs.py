@@ -102,7 +102,7 @@ def GenerateOtherExpressibleSets(screening_off_relations, latent_count, group_ge
                                 screening[1:4]))
         symops = group_generators[U3s, 0]  # Now 2d array
         Zs_new_world = np.take(reduce(np.take, symops), Zs)
-        nonai_exp_set = (Ys.tolist(),Xs.tolist(),Zs_new_world.tolist())
+        nonai_exp_set = (Ys.tolist(),Xs.tolist(),Zs_new_world.tolist()) #Changed ordering
         return nonai_exp_set
 
     return list(map(GenerateOneExpressibleSet, filter(lambda screening: len(screening[-1]) > 0, screening_off_relations)))
