@@ -105,6 +105,7 @@ def QuickGraphAssessment(g):
     print("For the graph who's parental structure is given by:")
     print([':'.join(np.take(names, vals)) + '->' + np.take(names, idx) for idx, vals in enumerate(graph_structure)])
     print("We identify the following screening-off relationship relevant to enforcing determinism and expressible sets:")
+    print("Sets given as (U1s,Y,Xs,Zs,U3s) with the following meaning:\nYs are screened off from U1s by Xs.\nZs are variables appearing in an expressible set with {Xs,Y} when U3s is different for Xs and Zs)")
     for screening in screening_off_relationships:
         print(tuple(np.take(names,{
             set: lambda s: list(s),
