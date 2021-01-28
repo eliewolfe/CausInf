@@ -68,16 +68,18 @@ def GenerateInflationGroupGenerators(inflation_order, latent_count, root_structu
     return group_generators
 
 
+
 def GenerateDeterminismAssumptions(determinism_checks, latent_count, group_generators, exp_set):
-    """#Updating DeterminismAssumptions data structure to accommodate multiple root variables.
+    """
     Recall that a determinism check is passed in the form of (U1s,Ys,Xs,Zs,U3s) with the following meaning:
     Ys are screened off from U1s by Xs. (Ys is always a list with only one element.)
-    Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)"""
+    Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)
+    """
     def GenerateOneDeterminismAssumption(screening):
         U1s = screening[0]
         XsY = np.array(list(screening[2])+list(screening[1])) - latent_count
         flatset_original_world = np.take(exp_set, XsY)
-        symops = group_generators[U1s, 0]  # Now a LIST of lists
+        symops = group_generators[U1s, 0]  # Now 2d array
         flatset_new_world = np.take(reduce(np.take, symops), flatset_original_world)
         rule = np.vstack((flatset_original_world, flatset_new_world)).T.astype('uint32')
         rule = rule[:-1, :].T.tolist() + rule[-1, :].T.tolist()
@@ -85,28 +87,28 @@ def GenerateDeterminismAssumptions(determinism_checks, latent_count, group_gener
 
     return list(map(GenerateOneDeterminismAssumption, determinism_checks))
 
+#TODO: Explore larger sets being screened off. What about Ys PLURAL being screened off from U1s? Isn't that worth looking into?
 def GenerateOtherExpressibleSets(screening_off_relations, latent_count, group_generators, exp_set):
-    """New function to identify extra expressible sets.
-    Recall that a screebing relation is passed in the form of (U1s,Ys,Xs,Zs,U3s) with the following meaning:
+    """
+    New function to identify extra expressible sets.
+    Recall that a screening relation is passed in the form of (U1s,Ys,Xs,Zs,U3s) with the following meaning:
     Ys are screened off from U1s by Xs. (Ys is always a list with only one element.)
-    Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)"""
+    Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)
+    """
 
     def GenerateOneExpressibleSet(screening):
         U3s = screening[4]
         (Ys, Xs, Zs) = tuple(map(lambda orig_node_indices: np.take(exp_set, np.array(orig_node_indices) - latent_count),
                                 screening[1:4]))
-        #Ys = np.take(exp_set, np.array(screening[1]) - latent_count)
-        #Xs = np.take(exp_set, np.array(screening[2]) - latent_count)
-        #Zs = np.take(exp_set, np.array(screening[3]) - latent_count)
-        symops = group_generators[U3s, 0]  # Now a LIST of lists
+        symops = group_generators[U3s, 0]  # Now 2d array
         Zs_new_world = np.take(reduce(np.take, symops), Zs)
-        nonai_exp_set = (Ys.tolist(),Zs_new_world.tolist(),Xs.tolist())
+        nonai_exp_set = (Ys.tolist(),Xs.tolist(),Zs_new_world.tolist())
         return nonai_exp_set
 
     return list(map(GenerateOneExpressibleSet, filter(lambda screening: len(screening[-1]) > 0, screening_off_relations)))
 
 
-# We should add a new function to give expressible sets. Ideally with symbolic output.
+
 
 
 
