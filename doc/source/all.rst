@@ -1,13 +1,13 @@
 :orphan:
 
 inflation package
-===========
+======================
 
 Submodules
 ----------
 
 inflation.certificate module
-----------------------
+----------------------------------------------------
 
 .. automodule:: inflation.certificate
    :members:
@@ -15,7 +15,7 @@ inflation.certificate module
    :show-inheritance:
 
 inflation.dimino module
------------------
+----------------------------------------------------
 
 .. automodule:: inflation.dimino
    :members:
@@ -23,7 +23,7 @@ inflation.dimino module
    :show-inheritance:
 
 inflation.graphs module
------------------
+----------------------------------------------------
 
 .. automodule:: inflation.graphs
    :members:
@@ -31,7 +31,7 @@ inflation.graphs module
    :show-inheritance:
 
 inflation.inflationlp module
-----------------------
+----------------------------------------------------
 
 .. automodule:: inflation.inflationlp
    :members:
@@ -39,7 +39,7 @@ inflation.inflationlp module
    :show-inheritance:
 
 inflation.inflationmatrix module
---------------------------
+----------------------------------------------------
 
 .. automodule:: inflation.inflationmatrix
    :members:
@@ -47,7 +47,7 @@ inflation.inflationmatrix module
    :show-inheritance:
 
 inflation.mosekinfeas module
---------------------------------------------
+----------------------------------------------------
 
 .. automodule:: inflation.mosekinfeas
    :members:
@@ -55,7 +55,7 @@ inflation.mosekinfeas module
    :show-inheritance:
 
 inflation.moseklp module
---------------------------------------------
+----------------------------------------------------
 
 .. automodule:: inflation.moseklp
    :members:
@@ -63,7 +63,7 @@ inflation.moseklp module
    :show-inheritance:
 
 inflation.presortlp module
---------------------------------------------
+----------------------------------------------------
 
 .. automodule:: inflation.presortlp
    :members:
@@ -71,7 +71,7 @@ inflation.presortlp module
    :show-inheritance:
 
 inflation.quickgraph module
---------------------------------------------
+----------------------------------------------------
 
 .. automodule:: inflation.quickgraph
    :members:
@@ -79,7 +79,7 @@ inflation.quickgraph module
    :show-inheritance:
 
 inflation.strategies module
---------------------------------------------
+----------------------------------------------------
 
 .. automodule:: inflation.strategies
    :members:
@@ -87,7 +87,7 @@ inflation.strategies module
    :show-inheritance:
 
 inflation.utilities module
---------------------------------------------
+----------------------------------------------------
 
 .. automodule:: inflation.utilities
    :members:
@@ -95,7 +95,7 @@ inflation.utilities module
    :show-inheritance:
 
 Module contents
---------------------------------------------
+----------------------------------------------------
 
 .. automodule:: inflation
    :members:

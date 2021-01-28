@@ -71,8 +71,8 @@ def GenerateInflationGroupGenerators(inflation_order, latent_count, root_structu
 def GenerateDeterminismAssumptions(determinism_checks, latent_count, group_generators, exp_set):
     """#Updating DeterminismAssumptions data structure to accommodate multiple root variables.
     Recall that a determinism check is passed in the form of (U1s,Ys,Xs,Zs,U3s) with the following meaning:
-            Ys are screened off from U1s by Xs. (Ys is always a list with only one element.)
-            Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)"""
+    Ys are screened off from U1s by Xs. (Ys is always a list with only one element.)
+    Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)"""
     def GenerateOneDeterminismAssumption(screening):
         U1s = screening[0]
         XsY = np.array(list(screening[2])+list(screening[1])) - latent_count
@@ -88,8 +88,8 @@ def GenerateDeterminismAssumptions(determinism_checks, latent_count, group_gener
 def GenerateOtherExpressibleSets(screening_off_relations, latent_count, group_generators, exp_set):
     """New function to identify extra expressible sets.
     Recall that a screebing relation is passed in the form of (U1s,Ys,Xs,Zs,U3s) with the following meaning:
-            Ys are screened off from U1s by Xs. (Ys is always a list with only one element.)
-            Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)"""
+    Ys are screened off from U1s by Xs. (Ys is always a list with only one element.)
+    Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)"""
 
     def GenerateOneExpressibleSet(screening):
         U3s = screening[4]
