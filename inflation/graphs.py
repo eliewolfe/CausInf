@@ -9,7 +9,7 @@ import numpy as np
 if __name__ == '__main__':
     import sys
     import pathlib
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from inflation.dimino import dimino_wolfe
 #from igraph import *
