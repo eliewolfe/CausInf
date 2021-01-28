@@ -22,7 +22,7 @@ def GenerateCanonicalExpressibleSet(inflation_order, inflation_depths, offsets):
     # offsets=GenerateOffsets(inflation_order,inflation_depths)
     obs_count = len(inflation_depths)
     order_range = np.arange(inflation_order)
-    cannonical_pos = np.empty((obs_count, inflation_order), dtype=np.uint32)
+    cannonical_pos = np.empty((obs_count, inflation_order), dtype=np.int) #uint would give rise to type casting error
     for i in np.arange(obs_count):
         cannonical_pos[i] = np.sum(np.outer(inflation_order ** np.arange(inflation_depths[i]), order_range), axis=0) + \
                             offsets[i]
@@ -48,7 +48,7 @@ def GenerateInflationGroupGenerators(inflation_order, latent_count, root_structu
         inflation_order_gen_count = 1
     else:
         inflation_order_gen_count = 2
-    group_generators = np.empty((latent_count, inflation_order_gen_count, num_vars), np.uint)
+    group_generators = np.empty((latent_count, inflation_order_gen_count, num_vars), np.int) #uint would give rise to type casting error
     for latent_to_explore in np.arange(latent_count):
         for gen_idx in np.arange(inflation_order_gen_count):
             initialtranspose = MoveToFront(latent_count, np.array([latent_to_explore]))
