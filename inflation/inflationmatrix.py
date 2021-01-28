@@ -59,8 +59,20 @@ def EncodeA(obs_count, num_vars, valid_column_orbits, expr_set, inflation_order,
     result.sort(axis=0)  # in-place sort
     return result
 
+def EncodeA_ExtraExpressible(obs_count, num_vars, valid_column_orbits, expr_set, other_expressible_sets, inflation_order, card):
+    ######WORK IN PROGRESS, DO NOT USE######
+    original_product_cardinality = card ** obs_count
+    results = np.empty([], np.uint32)
+    EncodingMonomialToRow = GenerateEncodingMonomialToRow(original_product_cardinality, inflation_order)
+    EncodingColumnToMonomial = GenerateEncodingColumnToMonomial(card, num_vars, np.array(expr_set))
+    result_diagonal = EncodingMonomialToRow.take(EncodingColumnToMonomial).take(valid_column_orbits)
+    ExtraEncodingColumnToRow = [GenerateEncodingColumnToMonomial(card, num_vars, np.array(extra_expr_set)) for extra_expr_set in other_expressible_sets]
+    # Once the encoding is done, the order of the columns can be tweaked at will!
+    #result.sort(axis=0)  # in-place sort
+    return result
 
-def SciPyArrayFromOnesPositions(OnesPositions, sort_columns=True):
+
+def SciPyArrayFromOnesPositions(OnesPositions, sort_columns=False):
     columncount = OnesPositions.shape[-1]
     if sort_columns:
         ar_to_broadcast = np.lexsort(OnesPositions)

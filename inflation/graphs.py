@@ -135,7 +135,10 @@ def LearnInflationGraphParameters(g, inflation_order, extra_expressible=False, d
             print(nonai_exp_set)
         print('\u2500' * 80 + '\n')
     #TODO: Return exp_sets plural instead of only diagonal instance.
-    return obs_count, num_vars, exp_set, group_elem, det_assumptions, names[latent_count:]
+    if extra_expressible:
+        return obs_count, num_vars, exp_set, group_elem, det_assumptions, names[latent_count:], other_expressible_sets
+    else:
+        return obs_count, num_vars, exp_set, group_elem, det_assumptions, names[latent_count:]
 
 
 
