@@ -108,10 +108,11 @@ def QuickGraphAssessment(g):
     print("We identify the following screening-off relationship relevant to enforcing determinism and expressible sets:")
     print("Sets given as (U1s,Y,Xs,Zs,U3s) with the following meaning:\nYs are screened off from U1s by Xs.\nYs are screened off from Zs by Xs when U3s is different for (Y,Xs) vs Zs.")
     for screening in screening_off_relationships:
-        print(tuple(np.take(names,{
-            set: lambda s: list(s),
-            int: lambda s: [s],
-            list: lambda s: s}[type(indices)](indices)).tolist() for indices in screening))
+        #print(tuple(np.take(names,{
+        #    set: lambda s: list(s),
+        #    int: lambda s: [s],
+        #    list: lambda s: s}[type(indices)](indices)).tolist() for indices in screening))
+        print(tuple(np.take(names,indices).tolist() for indices in screening))
     print('\u2500'*80+'\n')
 
 if __name__ == '__main__':

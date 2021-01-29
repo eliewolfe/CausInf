@@ -5,21 +5,20 @@ Created on Tue Dec 15 16:16:04 2020
 
 @author: boraulu
 """
-# import sys
-# import pathlib
-# parent_directory=pathlib.Path(__file__).resolve().parent
-# import importlib
-# importlib.import_module('strategies', parent_directory)
-
+from __future__ import absolute_import
+import numpy as np
+from scipy.sparse import coo_matrix
 from functools import lru_cache
 from itertools import permutations
 
-import numpy as np
-from scipy.sparse import coo_matrix
+if __name__ == '__main__':
+    import sys
+    import pathlib
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from .graphs import LearnInflationGraphParameters
-from .strategies import ValidColumnOrbits
-from .utilities import PositionIndex, MoveToBack, GenShapedColumnIntegers
+from inflation.graphs import LearnInflationGraphParameters
+from inflation.strategies import ValidColumnOrbits
+from inflation.utilities import PositionIndex, MoveToBack, GenShapedColumnIntegers
 
 
 @lru_cache(maxsize=16)
@@ -60,19 +59,24 @@ def EncodeA(obs_count, num_vars, valid_column_orbits, expr_set, inflation_order,
     return result
 
 def EncodeA_ExtraExpressible(obs_count, num_vars, valid_column_orbits, expr_set, other_expressible_sets, inflation_order, card):
-    ######WORK IN PROGRESS, DO NOT USE######
+    ######WORK IN PROGRESS, READY FOR BETA TESTING######
     original_product_cardinality = card ** obs_count
-    results = np.empty([], np.uint32)
+    row_blocks_count=len(other_expressible_sets)+1
+    results = np.empty(np.hstack((row_blocks_count,valid_column_orbits.shape)), np.uint32)
     EncodingMonomialToRow = GenerateEncodingMonomialToRow(original_product_cardinality, inflation_order)
     EncodingColumnToMonomial = GenerateEncodingColumnToMonomial(card, num_vars, np.array(expr_set))
-    result_diagonal = EncodingMonomialToRow.take(EncodingColumnToMonomial).take(valid_column_orbits)
-    ExtraEncodingColumnToRow = [GenerateEncodingColumnToMonomial(card, num_vars, np.array(extra_expr_set)) for extra_expr_set in other_expressible_sets]
+    results[0] = EncodingMonomialToRow.take(EncodingColumnToMonomial).take(valid_column_orbits)
+    for i in np.arange(1,row_blocks_count):
+        extra_expr_set_flattened = np.hstack(other_expressible_sets[i-1])
+        results[i] = GenerateEncodingColumnToMonomial(card, num_vars, extra_expr_set_flattened)
+    accumulated = np.add.accumulate(np.amax(results, axis=0)+1)
+    offsets = np.hstack(([0], accumulated[:-1]))
     # Once the encoding is done, the order of the columns can be tweaked at will!
     #result.sort(axis=0)  # in-place sort
-    return result
+    return np.hstack(results+offsets)
 
 
-def SciPyArrayFromOnesPositions(OnesPositions, sort_columns=False):
+def SciPyArrayFromOnesPositions(OnesPositions, sort_columns=True):
     columncount = OnesPositions.shape[-1]
     if sort_columns:
         ar_to_broadcast = np.lexsort(OnesPositions)
@@ -93,13 +97,28 @@ def SparseInflationMatrix(obs_count, num_vars, valid_column_orbits, expr_set, in
         EncodeA(obs_count, num_vars, valid_column_orbits, expr_set, inflation_order, card))
 
 
-def InflationMatrixFromGraph(g, inflation_order, card):
-    obs_count, num_vars, expr_set, group_elem, det_assumptions, names = LearnInflationGraphParameters(g,
-                                                                                                      inflation_order)
+def InflationMatrixFromGraph(g, inflation_order, card, extra_expressible=False):
+    #Needs documentation!
+    learned_parameters = LearnInflationGraphParameters(g, inflation_order, extra_expressible=True)
+    (obs_count, num_vars, expr_set, group_elem, det_assumptions, names) = learned_parameters[:-1]
     print(names)  # REMOVE THIS PRINTOUT after accepting fixed order of variables.
     valid_column_orbits = ValidColumnOrbits(card, num_vars, group_elem, det_assumptions)
-    return SciPyArrayFromOnesPositions(
-        EncodeA(obs_count, num_vars, valid_column_orbits, expr_set, inflation_order, card))
+    if extra_expressible:
+        other_expressible_sets = learned_parameters[-1]
+        return SciPyArrayFromOnesPositions(EncodeA_ExtraExpressible(obs_count,
+                                                                    num_vars,
+                                                                    valid_column_orbits,
+                                                                    expr_set,
+                                                                    other_expressible_sets,
+                                                                    inflation_order,
+                                                                    card))
+    else:
+        return SciPyArrayFromOnesPositions(EncodeA(obs_count,
+                                                   num_vars,
+                                                   valid_column_orbits,
+                                                   expr_set,
+                                                   inflation_order,
+                                                   card))
 
 
 def Generate_b_and_counts(Data, inflation_order):
@@ -135,7 +154,7 @@ def Generate_b_and_counts(Data, inflation_order):
 
     >>> Data = None
     >>> Inflation_order = None
-    >>> Generate_b_and_counts(Data, Inflation_order)
+    >>> Generate_b_and_counts(Data, inflation_order)
     ***TO FILL IN***
     """
     EncodingMonomialToRow = GenerateEncodingMonomialToRow(len(Data), inflation_order)
@@ -149,3 +168,27 @@ def Generate_b_and_counts(Data, inflation_order):
 
 def FindB(Data, inflation_order):
     return np.multiply(*Generate_b_and_counts(Data, inflation_order))
+
+def MarginalOn(data, card, obs_count, marginal):
+    initial_shape = np.full(obs_count, card, np.uint)
+    reshaped_data = np.reshape(data,tuple(initial_shape))
+    return reshaped_data.transpose(MoveToBack(obs_count, np.array(marginal))).reshape(
+            (-1, card ** len(marginal))).sum(axis=0)
+
+def MarginalVectorFromGraph(g, card, inflation_order, card, extra_expressible=False):
+    ###WORK IN PROGRESS; still only returns b-vector associated with the diagonal expressible set.###
+    if not extra_expressible:
+        return FindB(data, inflation_order)
+    else:
+        b_diagonal_exp_set = FindB(data, inflation_order)
+        names, parents_of, roots_of, screening_off_relationships = LearnParametersFromGraph(g, hasty=False)
+        obs_count = len(list(filter(None, parents_of)))
+        latent_count = len(parents_of) - obs_count
+        obs_names = names[latent_count:]
+        other_expressible_sets_original = [tuple(map(lambda orig_node_indices: np.array(orig_node_indices) - latent_count,
+                                screening[1:4])) for screening in filter(lambda screening: len(screening[-1]) > 0, screening_off_relations)]
+        #How should we compute the marginal probability?
+        #Given P(ABC) how do we obtain P(AB)P(BC)/P(B) as a vector of appropriate length?
+        for eset in other_expressible_sets_original:
+            print(tuple(np.take(obs_names, indices).tolist() for indices in eset))
+        return b_diagonal_exp_set
