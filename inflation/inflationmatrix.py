@@ -175,7 +175,7 @@ def MarginalOn(data, card, obs_count, marginal):
     return reshaped_data.transpose(MoveToBack(obs_count, np.array(marginal))).reshape(
             (-1, card ** len(marginal))).sum(axis=0)
 
-def MarginalVectorFromGraph(g, card, inflation_order, card, extra_expressible=False):
+def MarginalVectorFromGraph(g, data, inflation_order, card, extra_expressible=False):
     ###WORK IN PROGRESS; still only returns b-vector associated with the diagonal expressible set.###
     if not extra_expressible:
         return FindB(data, inflation_order)
@@ -192,3 +192,44 @@ def MarginalVectorFromGraph(g, card, inflation_order, card, extra_expressible=Fa
         for eset in other_expressible_sets_original:
             print(tuple(np.take(obs_names, indices).tolist() for indices in eset))
         return b_diagonal_exp_set
+
+def ReshapedSymbolicProbabilities(names, card, indices):
+    import sympy as sy
+    newshape = tuple(np.full(len(indices), card, np.uint8))
+    return np.reshape(sy.symbols(['P['+''.join(np.take(names, indices).tolist())+'](' + ''.join([''.join(str(i)) for i in idx]) + ')' for idx in np.ndindex(newshape)]),newshape)
+
+if __name__ == '__main__':
+    # In our test example let's compute index [2] separated from indices [4] by indices [1,3]
+    normalize = lambda v: v / np.linalg.norm(v, ord=1)
+    data = normalize(np.arange(1, 2 ** 5 + 1)).reshape(np.full(5, 2, np.uint))
+    obs_count = 5
+    card = 2
+    names = ['A','B','C','D','E']
+    first_indices = np.arange(obs_count)
+    #second_indices = first_indices + obs_count
+    #third_indices = second_indices + obs_count
+    Y = [2]
+    X = [1,3]
+    Z = [4]
+    YXZ = Y + X + Z
+    #np.put(second_indices, X, X)
+    #np.put(second_indices, Z, Z)
+    #np.put(third_indices, X, X)
+    #after_summation = np.einsum(data,first_indices,
+    #                            data,second_indices,
+    #                            data,third_indices,
+    #                            YXZ)
+
+    after_summation = np.einsum(np.einsum(data, first_indices, sorted(X + Y)), sorted(X + Y),
+                                np.einsum(data, first_indices, sorted(X + Z)), sorted(X + Z),
+                                1/np.einsum(data, first_indices, sorted(X)), sorted(X),
+                                Y + X + Z).ravel()
+
+    SymbolicXY = ReshapedSymbolicProbabilities(names, card, sorted(X + Y))
+
+    #NEW PLAN: Just manually create symbols using ndindex and rescaling everything
+
+    #after_summation_symbolic = np.einsum(ReshapedSymbolicProbabilities(names, card, sorted(X + Y)), sorted(X + Y),
+    #                                     ReshapedSymbolicProbabilities(names, card, sorted(X + Z)), sorted(X + Z),
+    #                                     1/ReshapedSymbolicProbabilities(names, card, sorted(X)), sorted(X),
+    #                                     Y + X + Z).ravel()
