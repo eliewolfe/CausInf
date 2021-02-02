@@ -2,8 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Tue Dec 15 16:16:04 2020
-
-@author: boraulu
+@author: Bora Ulu & Elie Wolfe
 """
 from __future__ import absolute_import
 import numpy as np
@@ -17,13 +16,14 @@ if __name__ == '__main__':
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from inflation.graphs import LearnInflationGraphParameters
+from inflation.quickgraph import LearnOriginalGraphParameters
 from inflation.strategies import ValidColumnOrbits
-from inflation.utilities import PositionIndex, MoveToBack, GenShapedColumnIntegers
+from inflation.utilities import PositionIndex, MoveToBack, GenShapedColumnIntegers, SparseMatrixFromRowsPerColumn
 
 
 @lru_cache(maxsize=16)
 def GenerateEncodingMonomialToRow(original_cardinality_product,
-                                  inflation_order):  # I should make this recursive, as called by both A and b construction.
+                                  inflation_order):  # Cached in memory, as this function is called by both inflation matrix and inflation vector construction.
     monomial_count = int(original_cardinality_product ** inflation_order)
     permutation_count = int(np.math.factorial(inflation_order))
     MonomialIntegers = np.arange(0, monomial_count, 1, np.uint)
@@ -58,36 +58,33 @@ def EncodeA(obs_count, num_vars, valid_column_orbits, expr_set, inflation_order,
     result.sort(axis=0)  # in-place sort
     return result
 
-def EncodeA_ExtraExpressible(obs_count, num_vars, valid_column_orbits, expr_set, other_expressible_sets, inflation_order, card):
+def EncodeA_ExtraExpressible(obs_count, num_vars, valid_column_orbits, expr_set, inflated_expressible_sets, inflation_order, card):
     ######WORK IN PROGRESS, READY FOR BETA TESTING######
     original_product_cardinality = card ** obs_count
-    row_blocks_count=len(other_expressible_sets)+1
+    row_blocks_count=len(inflated_expressible_sets)+1
     results = np.empty(np.hstack((row_blocks_count,valid_column_orbits.shape)), np.uint32)
     EncodingMonomialToRow = GenerateEncodingMonomialToRow(original_product_cardinality, inflation_order)
     EncodingColumnToMonomial = GenerateEncodingColumnToMonomial(card, num_vars, np.array(expr_set))
     results[0] = EncodingMonomialToRow.take(EncodingColumnToMonomial).take(valid_column_orbits)
     for i in np.arange(1,row_blocks_count):
-        extra_expr_set_flattened = np.hstack(other_expressible_sets[i-1])
         #It is critical to pass the same ORDER of variables to GenerateEncodingColumnToMonomial and to Find_B_block
-        #In order for names to make sense, I am electing to pass a SORTED version of the flat set.
-        #extra_expr_set_flattened.sort()
-        results[i] = GenerateEncodingColumnToMonomial(card, num_vars, extra_expr_set_flattened)
-    accumulated = np.add.accumulate(np.amax(results, axis=0)+1)
+        #In order for names to make sense, I am electing to pass a SORTED version of the flat set, see InflateOneExpressibleSet
+        results[i] = GenerateEncodingColumnToMonomial(card, num_vars, inflated_expressible_sets[i-1]).take(valid_column_orbits)
+    accumulated = np.add.accumulate(np.amax(results, axis=(1,2))+1)
     offsets = np.hstack(([0], accumulated[:-1]))
     # Once the encoding is done, the order of the columns can be tweaked at will!
     #result.sort(axis=0)  # in-place sort
-    return np.hstack(results+offsets)
+    return np.hstack(results+offsets[:, np.newaxis, np.newaxis])
 
-
-def SciPyArrayFromOnesPositions(OnesPositions, sort_columns=True):
-    columncount = OnesPositions.shape[-1]
-    if sort_columns:
-        ar_to_broadcast = np.lexsort(OnesPositions)
-    else:
-        ar_to_broadcast = np.arange(columncount)
-    columnspec = np.broadcast_to(ar_to_broadcast, (len(OnesPositions), columncount)).ravel()
-    return coo_matrix((np.ones(OnesPositions.size, np.uint), (OnesPositions.ravel(), columnspec)),
-                      (int(np.amax(OnesPositions) + 1), columncount), dtype=np.uint)
+# def SciPyArrayFromOnesPositions(OnesPositions, sort_columns=True):
+#     columncount = OnesPositions.shape[-1]
+#     if sort_columns:
+#         ar_to_broadcast = np.lexsort(OnesPositions)
+#     else:
+#         ar_to_broadcast = np.arange(columncount)
+#     columnspec = np.broadcast_to(ar_to_broadcast, (len(OnesPositions), columncount)).ravel()
+#     return coo_matrix((np.ones(OnesPositions.size, np.uint), (OnesPositions.ravel(), columnspec)),
+#                       (int(np.amax(OnesPositions) + 1), columncount), dtype=np.uint)
 
 
 # def SciPyArrayFromOnesPositionsWithSort(OnesPositions):
@@ -95,9 +92,9 @@ def SciPyArrayFromOnesPositions(OnesPositions, sort_columns=True):
 #    columnspec=np.broadcast_to(np.lexsort(OnesPositions), (len(OnesPositions), columncount)).ravel()
 #    return coo_matrix((np.ones(OnesPositions.size,np.uint), (OnesPositions.ravel(), columnspec)),(int(np.amax(OnesPositions)+1), columncount),dtype=np.uint)
 
-def SparseInflationMatrix(obs_count, num_vars, valid_column_orbits, expr_set, inflation_order, card):
-    return SciPyArrayFromOnesPositions(
-        EncodeA(obs_count, num_vars, valid_column_orbits, expr_set, inflation_order, card))
+#def SparseInflationMatrix(obs_count, num_vars, valid_column_orbits, expr_set, inflation_order, card):
+#    return SciPyArrayFromOnesPositions(
+#        EncodeA(obs_count, num_vars, valid_column_orbits, expr_set, inflation_order, card))
 
 
 def InflationMatrixFromGraph(g, inflation_order, card, extra_expressible=False):
@@ -107,16 +104,16 @@ def InflationMatrixFromGraph(g, inflation_order, card, extra_expressible=False):
     print(names)  # REMOVE THIS PRINTOUT after accepting fixed order of variables.
     valid_column_orbits = ValidColumnOrbits(card, num_vars, group_elem, det_assumptions)
     if extra_expressible:
-        other_expressible_sets = learned_parameters[-1]
-        return SciPyArrayFromOnesPositions(EncodeA_ExtraExpressible(obs_count,
+        other_inflated_expressible_sets = learned_parameters[-1]
+        return SparseMatrixFromRowsPerColumn(EncodeA_ExtraExpressible(obs_count,
                                                                     num_vars,
                                                                     valid_column_orbits,
                                                                     expr_set,
-                                                                    other_expressible_sets,
+                                                                    other_inflated_expressible_sets,
                                                                     inflation_order,
                                                                     card))
     else:
-        return SciPyArrayFromOnesPositions(EncodeA(obs_count,
+        return SparseMatrixFromRowsPerColumn(EncodeA(obs_count,
                                                    num_vars,
                                                    valid_column_orbits,
                                                    expr_set,
@@ -135,21 +132,23 @@ def Numeric_and_Symbolic_b_block_DIAGONAL(data, inflation_order, obs_count, card
     symbolic_b = pre_symbolic_b.copy()
     for i in range(1, inflation_order):
         numeric_b = np.kron(pre_numeric_b, numeric_b)
-        symbolic_b = np.add.outer(pre_symbolic_b, symbolic_b).ravel()
+        symbolic_b = [s1+s2 for s1 in pre_symbolic_b for s2 in symbolic_b]
     numeric_b_block = np.multiply(numeric_b.take(idx), counts)
-    string_multipliers = np.fromiter(('' if i == 1 else str(i)+'*' for i in counts),np.str_)
-    symbolic_b_block = np.add(string_multipliers, symbolic_b.take(idx))
+    string_multipliers = ('' if i == 1 else str(i)+'*' for i in counts)
+    symbolic_b_block = [s1+s2 for s1,s2 in zip(string_multipliers, np.take(symbolic_b,idx))]
     return numeric_b_block, symbolic_b_block
 
 #NEW FUNCTION (Feb 2 2021)
-def Numeric_and_Symbolic_b_block_NON_AI_EXPR(data, other_expressible_set_original, obs_count, card, names):
+def Numeric_and_Symbolic_b_block_NON_AI_EXPR(data, other_expressible_set_original, obs_count, card, all_names):
+    latent_count = len(all_names) - obs_count
+    names = all_names[latent_count:]
     all_original_indices = np.arange(obs_count)
     Y = list(other_expressible_set_original[0])
     X = list(other_expressible_set_original[1])
     Z = list(other_expressible_set_original[2])
     # It is critical to pass the same ORDER of variables to GenerateEncodingColumnToMonomial and to Find_B_block
     # In order for names to make sense, I am electing to pass a SORTED version of the flat set.
-    YXZ = Y + X + Z
+    YXZ = sorted(Y + X + Z)  #see InflateOneExpressibleSet in graphs.py
     lenY = len(Y)
     lenX = len(X)
     lenZ = len(Z)
@@ -189,8 +188,34 @@ def Numeric_and_Symbolic_b_block_NON_AI_EXPR(data, other_expressible_set_origina
 
     return numeric_b_block, symbolic_b_block
 
+def NumericalAndSymbolicVectorsFromGraph(g, data, inflation_order, card, extra_expressible=False):
+    ###WORK IN PROGRESS; still only returns b-vector associated with the diagonal expressible set.###
+    if not extra_expressible:
+        names, parents_of, roots_of = LearnOriginalGraphParameters(g, hasty=True)
+        obs_count = len(list(filter(None, parents_of)))
+        return Numeric_and_Symbolic_b_block_DIAGONAL(data, inflation_order, obs_count, card)
+    else:
+        names, parents_of, roots_of, determinism_checks, extra_expressible_sets = LearnOriginalGraphParameters(g, hasty=False)
+        obs_count = len(list(filter(None, parents_of)))
+        latent_count = len(parents_of) - obs_count
+        obs_names = names[latent_count:]
+        numeric_b, symbolic_b = Numeric_and_Symbolic_b_block_DIAGONAL(data, inflation_order, obs_count, card)
+        other_expressible_sets_original = [
+            tuple(map(lambda orig_node_indices: np.array(orig_node_indices) - latent_count,
+                      e_set[:-1])) for e_set in extra_expressible_sets]
+        #How should we compute the marginal probability?
+        #Given P(ABC) how do we obtain P(AB)P(BC)/P(B) as a vector of appropriate length?
+        for eset in other_expressible_sets_original:
+            print(tuple(np.take(obs_names, indices).tolist() for indices in eset))
+            numeric_b_block, symbolic_b_block = Numeric_and_Symbolic_b_block_NON_AI_EXPR(data, eset, obs_count, card, names)
+            numeric_b.resize(len(numeric_b) + len(numeric_b_block))
+            numeric_b[-len(numeric_b_block):] = numeric_b_block
+            symbolic_b.extend(symbolic_b_block)
+        return numeric_b, symbolic_b
+
 
 def Generate_b_and_counts(Data, inflation_order):
+    #TO BE DEPRECATED
     """
     Parameters
     ----------
@@ -236,31 +261,11 @@ def Generate_b_and_counts(Data, inflation_order):
 
 
 def FindB(Data, inflation_order):
+    # TO BE DEPRECATED
     return np.multiply(*Generate_b_and_counts(Data, inflation_order))
 
-# def MarginalOn(data, card, obs_count, marginal):
-#     initial_shape = np.full(obs_count, card, np.uint)
-#     reshaped_data = np.reshape(data,tuple(initial_shape))
-#     return reshaped_data.transpose(MoveToBack(obs_count, np.array(marginal))).reshape(
-#            (-1, card ** len(marginal))).sum(axis=0)
 
-def MarginalVectorFromGraph(g, data, inflation_order, card, extra_expressible=False):
-    ###WORK IN PROGRESS; still only returns b-vector associated with the diagonal expressible set.###
-    if not extra_expressible:
-        return FindB(data, inflation_order)
-    else:
-        b_diagonal_exp_set = FindB(data, inflation_order)
-        names, parents_of, roots_of, screening_off_relationships = LearnParametersFromGraph(g, hasty=False)
-        obs_count = len(list(filter(None, parents_of)))
-        latent_count = len(parents_of) - obs_count
-        obs_names = names[latent_count:]
-        other_expressible_sets_original = [tuple(map(lambda orig_node_indices: np.array(orig_node_indices) - latent_count,
-                                screening[1:4])) for screening in filter(lambda screening: len(screening[-1]) > 0, screening_off_relations)]
-        #How should we compute the marginal probability?
-        #Given P(ABC) how do we obtain P(AB)P(BC)/P(B) as a vector of appropriate length?
-        for eset in other_expressible_sets_original:
-            print(tuple(np.take(obs_names, indices).tolist() for indices in eset))
-        return b_diagonal_exp_set
+
 
 #def ReshapedSymbolicProbabilities(names, card, indices):
 #    import sympy as sy
@@ -276,50 +281,46 @@ if __name__ == '__main__':
     names = ['A','B','C','D','E']
     other_expressible_set_original = [{2},{1,3},{4}]
     numeric_b_block, symbolic_b_block = Numeric_and_Symbolic_b_block_NON_AI_EXPR(data, other_expressible_set_original, obs_count, card, names)
-    # first_indices = np.arange(obs_count)
-    # #second_indices = first_indices + obs_count
-    # #third_indices = second_indices + obs_count
-    # Y = [2]
-    # X = [1,3]
-    # Z = [4]
-    # # It is critical to pass the same ORDER of variables to GenerateEncodingColumnToMonomial and to Find_B_block
-    # # In order for names to make sense, I am electing to pass a SORTED version of the flat set.
-    # YXZ = sorted(Y + X + Z)
-    # lenY = len(Y)
-    # lenX = len(X)
-    # lenZ = len(Z)
-    # lenYXZ = len(YXZ)
-    # #np.put(second_indices, X, X)
-    # #np.put(second_indices, Z, Z)
-    # #np.put(third_indices, X, X)
-    # #after_summation = np.einsum(data,first_indices,
-    # #                            data,second_indices,
-    # #                            data,third_indices,
-    # #                            YXZ)
-    #
-    # numeric_b_block = np.einsum(np.einsum(data, first_indices, sorted(X + Y)), sorted(X + Y),
-    #                             np.einsum(data, first_indices, sorted(X + Z)), sorted(X + Z),
-    #                             1/np.einsum(data, first_indices, sorted(X)), sorted(X),
-    #                             YXZ).ravel()
-    #
-    # lowY = np.arange(lenY).tolist()
-    # lowX = np.arange(lenY,lenY + lenX).tolist()
-    # lowZ = np.arange(lenY + lenX, lenY + lenX + lenZ).tolist()
-    # newshape = tuple(np.full(lenYXZ, card, np.uint8))
-    # symbolic_b_block = [
-    #  'P[' + ''.join(np.take(names, np.take(YXZ,sorted(lowX + lowY))).tolist()) + '](' +
-    #  ''.join([''.join(str(i)) for i in np.take(idYXZ,sorted(lowX + lowZ))]) + ')' + \
-    #  'P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX + lowZ))).tolist()) + '](' +
-    #  ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX + lowZ))]) + ')' +
-    #  '/P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX))).tolist()) + '](' +
-    #  ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX))]) + ')'
-    #  for idYXZ in np.ndindex(newshape)]
 
-    #SymbolicXY = ReshapedSymbolicProbabilities(names, card, sorted(X + Y))
+    from igraph import Graph
 
-    #NEW PLAN: Just manually create symbols using ndindex and rescaling everything
 
-    #after_summation_symbolic = np.einsum(ReshapedSymbolicProbabilities(names, card, sorted(X + Y)), sorted(X + Y),
-    #                                     ReshapedSymbolicProbabilities(names, card, sorted(X + Z)), sorted(X + Z),
-    #                                     1/ReshapedSymbolicProbabilities(names, card, sorted(X)), sorted(X),
-    #                                     Y + X + Z).ravel()
+    def ListOfBitStringsToListOfIntegers(list_of_bitstrings):
+        return list(map(lambda s: int(s, 2), list_of_bitstrings))
+
+
+    def UniformDistributionFromSupport(list_of_bitstrings):
+        numvar = max(map(len, list_of_bitstrings))
+        numevents = len(list_of_bitstrings)
+        data = np.zeros(2 ** numvar)
+        data[ListOfBitStringsToListOfIntegers(list_of_bitstrings)] = 1 / numevents
+        return data
+
+
+    InstrumentalGraph = Graph.Formula("U1->X->A->B,U2->A:B")
+    Evans14a = Graph.Formula("U1->A:C,U2->A:B:D,U3->B:C:D,A->B,C->D")
+    Evans14b = Graph.Formula("U1->A:C,U2->B:C:D,U3->A:D,A->B,B:C->D")
+    Evans14c = Graph.Formula("U1->A:C,U2->B:D,U3->A:D,A->B->C->D")
+    IceCreamGraph = Graph.Formula("U1->A,U2->B:D,U3->C:D,A->B:C,B->D")
+    BiconfoundingInstrumental = Graph.Formula("U1->A,U2->B:C,U3->B:D,A->B,B->C:D")
+    TriangleGraph = Graph.Formula("X->A,Y->A:B,Z->B:C,X->C")
+
+    inflation_order = 2
+    card = 2
+
+
+    TriData = UniformDistributionFromSupport(['000', '111'])
+    InstrumentalData = UniformDistributionFromSupport(['000', '101'])
+    BiconfoundingInstrumentalData = UniformDistributionFromSupport(['0000', '0100', '1011', '1111'])
+
+
+    g = InstrumentalGraph
+    data = InstrumentalData
+
+    #InfMat = InflationMatrixFromGraph(g, inflation_order, card)
+    #b = FindB(data, inflation_order)
+
+    InfMat = InflationMatrixFromGraph(g, inflation_order, card, extra_expressible=True)
+    B_numeric, B_symbolic = NumericalAndSymbolicVectorsFromGraph(g, data, inflation_order, card, extra_expressible=True)
+
+

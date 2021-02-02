@@ -13,7 +13,7 @@ if __name__ == '__main__':
 
 from inflation.dimino import dimino_wolfe
 #from igraph import *
-from inflation.quickgraph import LearnParametersFromGraph
+from inflation.quickgraph import LearnOriginalGraphParameters
 from inflation.utilities import MoveToFront
 from functools import reduce #for permutation composition
 
@@ -69,13 +69,13 @@ def GenerateInflationGroupGenerators(inflation_order, latent_count, root_structu
 
 
 
-def GenerateDeterminismAssumptions(determinism_checks, latent_count, group_generators, exp_set):
+def InflateDeterminismAssumptions(determinism_checks, latent_count, group_generators, exp_set):
     """
     Recall that a determinism check is passed in the form of (U1s,Ys,Xs,Zs,U3s) with the following meaning:
     Ys are screened off from U1s by Xs. (Ys is always a list with only one element.)
     Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)
     """
-    def GenerateOneDeterminismAssumption(screening):
+    def InflateOneDeterminismAssumption(screening):
         U1s = screening[0]
         XsY = np.array(list(screening[2])+list(screening[1])) - latent_count
         flatset_original_world = np.take(exp_set, XsY)
@@ -85,10 +85,10 @@ def GenerateDeterminismAssumptions(determinism_checks, latent_count, group_gener
         rule = rule[:-1, :].T.tolist() + rule[-1, :].T.tolist()
         return rule
 
-    return list(map(GenerateOneDeterminismAssumption, determinism_checks))
+    return list(map(InflateOneDeterminismAssumption, determinism_checks))
 
 #TODO: Explore larger sets being screened off. What about Ys PLURAL being screened off from U1s? Isn't that worth looking into?
-def GenerateOtherExpressibleSets(screening_off_relations, latent_count, group_generators, exp_set):
+def InflateOtherExpressibleSets(extra_expressible_sets, latent_count, group_generators, exp_set):
     """
     New function to identify extra expressible sets.
     Recall that a screening relation is passed in the form of (U1s,Ys,Xs,Zs,U3s) with the following meaning:
@@ -96,16 +96,20 @@ def GenerateOtherExpressibleSets(screening_off_relations, latent_count, group_ge
     Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)
     """
 
-    def GenerateOneExpressibleSet(screening):
-        U3s = screening[4]
+    def InflateOneExpressibleSet(screening):
+        U3s = screening[-1]
         (Ys, Xs, Zs) = tuple(map(lambda orig_node_indices: np.take(exp_set, np.array(orig_node_indices) - latent_count),
-                                screening[1:4]))
+                                screening[:-1])) #Feb 2 2021: reindexed as U1s no longer passed to e_eset
         symops = group_generators[U3s, 0]  # Now 2d array
         Zs_new_world = np.take(reduce(np.take, symops), Zs)
-        nonai_exp_set = (Ys.tolist(),Xs.tolist(),Zs_new_world.tolist()) #Changed ordering
+        #The ordering of variables here must reflect the ordering used by Find_b
+        #We can return it as a flat array.
+        variable_ordering = np.argsort(np.hstack(screening[:-1]))
+        #nonai_exp_set = (Ys.tolist(),Xs.tolist(),Zs_new_world.tolist()) #Changed ordering
+        nonai_exp_set = np.hstack((Ys, Xs, Zs_new_world)).take(variable_ordering)  #Changed ordering
         return nonai_exp_set
 
-    return list(map(GenerateOneExpressibleSet, filter(lambda screening: len(screening[-1]) > 0, screening_off_relations)))
+    return list(map(InflateOneExpressibleSet, filter(lambda screening: len(screening[-1]) > 0, extra_expressible_sets)))
 
 
 
@@ -115,7 +119,7 @@ def GenerateOtherExpressibleSets(screening_off_relations, latent_count, group_ge
 
 
 def LearnInflationGraphParameters(g, inflation_order, extra_expressible=False, debug=False):
-    names, parents_of, roots_of, screening_off_relations = LearnParametersFromGraph(g)
+    names, parents_of, roots_of, determinism_checks, extra_expressible_sets = LearnOriginalGraphParameters(g)
     # print(names)
     graph_structure = list(filter(None, parents_of))
     obs_count = len(graph_structure)
@@ -130,8 +134,8 @@ def LearnInflationGraphParameters(g, inflation_order, extra_expressible=False, d
     group_generators = GenerateInflationGroupGenerators(inflation_order, latent_count, root_structure, inflation_depths,
                                                         offsets)
     group_elem = np.array(dimino_wolfe(group_generators.reshape((-1, num_vars))))
-    det_assumptions = GenerateDeterminismAssumptions(screening_off_relations, latent_count, group_generators, exp_set)
-    other_expressible_sets = GenerateOtherExpressibleSets(screening_off_relations, latent_count, group_generators, exp_set)
+    det_assumptions = InflateDeterminismAssumptions(determinism_checks, latent_count, group_generators, exp_set)
+    other_expressible_sets = InflateOtherExpressibleSets(extra_expressible_sets, latent_count, group_generators, exp_set)
     if debug:
         print("For the graph who's parental structure is given by:")
         print([':'.join(np.take(names, vals)) + '->' + np.take(names, idx) for idx, vals in enumerate(graph_structure)])

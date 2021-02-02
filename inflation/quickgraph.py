@@ -14,7 +14,7 @@ def ToTopologicalOrdering(g):
 
 #Feb 2 2021 Breaking changes:
 #Now outputting determinism_checks and expressible_sets as DIFFERENT lists
-def LearnParametersFromGraph(origgraph, hasty=False):
+def LearnOriginalGraphParameters(origgraph, hasty=False):
     g = ToTopologicalOrdering(origgraph)
     verts = g.vs
     verts["parents"] = g.get_adjlist('in');
@@ -38,22 +38,26 @@ def LearnParametersFromGraph(origgraph, hasty=False):
         #    screeningset.append(observed.index)
         #    return screeningset
 
-        def DeterminismCheckAndExpressibleSet(roots, observed):
+        def Identify_Determinism_Check(roots, observed):
             """roots is a list of root nodes which can be screened off, observed is a single node, in iGraph.VertexSeq format.
-            The output will be a tuple of 5 lists (except Y is integer, not list):
-            (U1s,Y,Xs,Zs,U3s) with the following meaning:
-            Ys are screened off from U1s by Xs.
-            Zs are variables appearing in an expressible set with {Xs,Y} when U3s is different for Xs and Zs)
+            The output will be a tuple of 3 lists
+            (U1s,Ys,Xs) with the following meaning: Ys are screened off from U1s by Xs.
             """
-
-            #TEMPORARY BYPASS, WILL REVERT AFTER SPLITTING INTO TWO FUNCTION
-            #children_of_roots = set().union(*roots["children"])
-            #screeningset = children_of_roots.intersection(observed["ancestors"])
-
             parents_of_observed = set(observed["parents"])
             descendants_of_roots = set().union(*roots["descendants"])
-            screeningset = parents_of_observed.intersection(descendants_of_roots)
+            U1s = roots.indices
+            Y = observed.index
+            Xs = list(parents_of_observed.intersection(descendants_of_roots))
+            return (U1s, [Y], Xs)
 
+        def Identify_Expressible_Set(roots, observed):
+            """roots is a list of root nodes which can be screened off, observed is a single node, in iGraph.VertexSeq format.
+            The output will be a tuple of 4 lists
+            (Ys,Xs,Zs,U3s) with the following meaning:
+            Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)
+            """
+            children_of_roots = set().union(*roots["children"])
+            screeningset = children_of_roots.intersection(observed["ancestors"])
             Xs = screeningset.copy()
             for sidx in screeningset:
                 screeningset_rest = screeningset.copy()
@@ -66,7 +70,6 @@ def LearnParametersFromGraph(origgraph, hasty=False):
 
             U1s = set(roots.indices)
             Y = observed.index
-            #Xs = screeningset
             U2s = set().union(*verts[Xs]["roots_of"]).difference(U1s)
 
             U2s_descendants = set().union(*verts[U2s]["descendants"])
@@ -81,22 +84,30 @@ def LearnParametersFromGraph(origgraph, hasty=False):
             if len(U3YZ) == 0:
                 Zs = set()
 
-            #return (U1s,Y,Xs,Zs,U3YZ)
-            return tuple(map(list,(U1s, [Y], Xs, Zs, U3YZ)))
+            return tuple(map(list,([Y], Xs, Zs, U3YZ)))
 
         from itertools import chain, combinations
-        def PossibleScreenings(v):
+        def Root_Subsets(v):
             "v is presumed to be a iGraph vertex object."
             screenable_roots = np.setdiff1d(v["roots_of"], v["parents"])
-            return [DeterminismCheckAndExpressibleSet(verts[subroots], v) for r in np.arange(1, screenable_roots.size + 1) for subroots in combinations(screenable_roots, r)]
+            return [verts[subroots] for r in np.arange(1, screenable_roots.size + 1) for subroots in combinations(screenable_roots, r)]
 
-        determinism_checks_and_expressible_sets = list(chain.from_iterable([PossibleScreenings(v) for v in g.vs[has_grandparents]]))
+        determinism_checks = [Identify_Determinism_Check(roots_subset,v)
+                                                       for v in g.vs[has_grandparents]
+                                                       for roots_subset in Root_Subsets(v)
+                                                       ]
 
-        return verts["name"], verts["parents"], verts["roots_of"], determinism_checks_and_expressible_sets
+        extra_expressible_sets = list(filter(lambda screening: len(screening[-1]) > 0,
+            [Identify_Expressible_Set(roots_subset,v)
+                                                       for v in g.vs[has_grandparents]
+                                                       for roots_subset in Root_Subsets(v)
+                                                       ]))
+
+        return verts["name"], verts["parents"], verts["roots_of"], determinism_checks, extra_expressible_sets
 
 
 def LearnSomeInflationGraphParameters(g, inflation_order):
-    names, parents_of, roots_of = LearnParametersFromGraph(g, hasty=True)
+    names, parents_of, roots_of = LearnOriginalGraphParameters(g, hasty=True)
     # print(names)
     graph_structure = list(filter(None, parents_of))
     obs_count = len(graph_structure)
@@ -109,17 +120,17 @@ def LearnSomeInflationGraphParameters(g, inflation_order):
 
 
 def QuickGraphAssessment(g):
-    names, parents_of, roots_of, screening_off_relationships = LearnParametersFromGraph(g, hasty=False)
+    names, parents_of, roots_of, determinism_checks, extra_expressible_sets = LearnOriginalGraphParameters(g, hasty=False)
     graph_structure = list(filter(None, parents_of))
     print("For the graph who's parental structure is given by:")
     print([':'.join(np.take(names, vals)) + '->' + np.take(names, idx) for idx, vals in enumerate(graph_structure)])
-    print("We identify the following screening-off relationship relevant to enforcing determinism and expressible sets:")
-    print("Sets given as (U1s,Y,Xs,Zs,U3s) with the following meaning:\nYs are screened off from U1s by Xs.\nYs are screened off from Zs by Xs when U3s is different for (Y,Xs) vs Zs.")
-    for screening in screening_off_relationships:
-        #print(tuple(np.take(names,{
-        #    set: lambda s: list(s),
-        #    int: lambda s: [s],
-        #    list: lambda s: s}[type(indices)](indices)).tolist() for indices in screening))
+    print("We identify the following screening-off relationships relevant to enforcing determinism:")
+    print("Sets given as (U1s,Y,Xs) with the following meaning:\nYs are screened off from U1s by Xs.")
+    for screening in determinism_checks:
+        print(tuple(np.take(names,indices).tolist() for indices in screening))
+    print("We identify the following screening-off non-ai expressible sets:")
+    print("Sets given as (Y,Xs,Zs,U3s) with the following meaning:\nYs are screened off from Zs by Xs when U3s is different for (Y,Xs) vs Zs.")
+    for screening in extra_expressible_sets:
         print(tuple(np.take(names,indices).tolist() for indices in screening))
     print('\u2500'*80+'\n')
 

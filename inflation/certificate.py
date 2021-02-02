@@ -69,53 +69,91 @@ def IntelligentRound(y, SpMatrix):
     return y2
 
 
-def Inequality(Graph, inflation_order, card, SpMatrix, b, Sol):
+# def Inequality(Graph, inflation_order, card, SpMatrix, b, Sol):
+#     #Modifying Feb 2, 2021 to pass B_symbolic as an argument for Inequality
+#     yRaw = np.array(Sol['x']).ravel()
+#     tol = 1 / (np.linalg.norm(b, np.inf) * np.linalg.norm(yRaw, np.inf) * (10 ** 6))
+#     if WitnessDataTest(yRaw, b, tol):
+#         y = IntelligentRound(yRaw, SpMatrix)
+#         obs_count, num_vars, names = LearnSomeInflationGraphParameters(Graph, inflation_order)
+#
+#         symbolnames = ['P(' + ''.join([''.join(str(i)) for i in idx]) + ')' for idx in
+#                        np.ndindex(tuple(np.full(obs_count, card, np.uint8)))]
+#         symbols = np.array(sy.symbols(symbolnames))
+#         symb, counts = Generate_b_and_counts(symbols, inflation_order)
+#         symbtostring = np.array([str(term).replace('*P', 'P') for term in symb])
+#
+#         yRaw = np.multiply(yRaw, counts)
+#
+#         y3 = np.multiply(y, counts)
+#         uy = np.unique(np.abs(y3))
+#         GCD = np.gcd.reduce(uy)
+#         y3 = y3 / GCD
+#         y3 = y3.astype(np.int)
+#         # ySparse=coo_matrix(y3)
+#
+#         # print('Now to make things human readable...')
+#
+#         indextally = defaultdict(list)
+#         # [indextally[str(y3[i])].append(i) for i in np.nonzero(y3)]
+#         [indextally[str(val)].append(i) for i, val in enumerate(y3) if val != 0]
+#
+#         symboltally = defaultdict(list)
+#         for i, vals in indextally.items():
+#             symboltally[i] = symbtostring.take(vals).tolist()
+#
+#         final_ineq_WITHOUT_ZEROS = np.multiply(y3[np.nonzero(y3)], symb[np.nonzero(y3)])
+#         Inequality_as_string = '0≤' + "+".join([str(term) for term in final_ineq_WITHOUT_ZEROS]).replace('*P', 'P')
+#         Inequality_as_string = Inequality_as_string.replace('+-', '-')
+#
+#         print("Writing to file: 'inequality_output.json'")
+#
+#         returntouser = {
+#             'Order of variables': names,
+#             'Raw rolver output': yRaw.tolist(),
+#             'Inequality as string': Inequality_as_string,
+#             'Coefficients grouped by index': indextally,
+#             'Coefficients grouped by symbol': symboltally,
+#             # 'b_vector_position': idx.tolist(),
+#             'Clean solver output': y3.tolist(),
+#             'Symolic association': symbtostring.tolist()
+#         }
+#         f = open('inequality_output.json', 'w')
+#         print(json.dumps(returntouser), file=f)
+#         f.close()
+#         return returntouser
+#     else:
+#         return print('Compatibility Error: The input distribution is compatible with given inflation order test.')
+
+def Inequality(SpMatrix, B_numeric, B_symbolic, Sol):
+    #Modified Feb 2, 2021 to pass B_symbolic as an argument for Inequality
     yRaw = np.array(Sol['x']).ravel()
-    tol = 1 / (np.linalg.norm(b, np.inf) * np.linalg.norm(yRaw, np.inf) * (10 ** 6))
-    if WitnessDataTest(yRaw, b, tol):
+    tol = 1 / (np.linalg.norm(B_numeric, np.inf) * np.linalg.norm(yRaw, np.inf) * (10 ** 6))
+    if WitnessDataTest(yRaw, B_numeric, tol):
         y = IntelligentRound(yRaw, SpMatrix)
-        obs_count, num_vars, names = LearnSomeInflationGraphParameters(Graph, inflation_order)
-
-        symbolnames = ['P(' + ''.join([''.join(str(i)) for i in idx]) + ')' for idx in
-                       np.ndindex(tuple(np.full(obs_count, card, np.uint8)))]
-        symbols = np.array(sy.symbols(symbolnames))
-        symb, counts = Generate_b_and_counts(symbols, inflation_order)
-        symbtostring = np.array([str(term).replace('*P', 'P') for term in symb])
-
-        yRaw = np.multiply(yRaw, counts)
-
-        y3 = np.multiply(y, counts)
-        uy = np.unique(np.abs(y3))
-        GCD = np.gcd.reduce(uy)
-        y3 = y3 / GCD
-        y3 = y3.astype(np.int)
-        # ySparse=coo_matrix(y3)
-
         # print('Now to make things human readable...')
-
         indextally = defaultdict(list)
-        # [indextally[str(y3[i])].append(i) for i in np.nonzero(y3)]
-        [indextally[str(val)].append(i) for i, val in enumerate(y3) if val != 0]
+        [indextally[str(val)].append(i) for i, val in enumerate(y) if val != 0]
 
         symboltally = defaultdict(list)
         for i, vals in indextally.items():
-            symboltally[i] = symbtostring.take(vals).tolist()
+            symboltally[i] = np.take(B_symbolic,vals).tolist()
 
-        final_ineq_WITHOUT_ZEROS = np.multiply(y3[np.nonzero(y3)], symb[np.nonzero(y3)])
-        Inequality_as_string = '0≤' + "+".join([str(term) for term in final_ineq_WITHOUT_ZEROS]).replace('*P', 'P')
-        Inequality_as_string = Inequality_as_string.replace('+-', '-')
+        #final_ineq_WITHOUT_ZEROS = np.multiply(y[np.nonzero(y)], sy.symbols(np.take(B_symbolic,np.nonzero(y))))
+        #Inequality_as_string = '0≤' + "+".join([str(term) for term in final_ineq_WITHOUT_ZEROS]).replace('*P', 'P')
+        #Inequality_as_string = Inequality_as_string.replace('+-', '-')
 
         print("Writing to file: 'inequality_output.json'")
 
         returntouser = {
-            'Order of variables': names,
+            #'Order of variables': names,
             'Raw rolver output': yRaw.tolist(),
-            'Inequality as string': Inequality_as_string,
+            #'Inequality as string': Inequality_as_string,
             'Coefficients grouped by index': indextally,
             'Coefficients grouped by symbol': symboltally,
             # 'b_vector_position': idx.tolist(),
-            'Clean solver output': y3.tolist(),
-            'Symolic association': symbtostring.tolist()
+            'Clean solver output': y.tolist()#,
+            #'Symbolic association': symbtostring.tolist()
         }
         f = open('inequality_output.json', 'w')
         print(json.dumps(returntouser), file=f)

@@ -4,8 +4,10 @@
 Utility functions.
 """
 
+from __future__ import absolute_import
 import numpy as np
 from numba import njit
+from scipy.sparse import coo_matrix
 
 
 def Deduplicate(
@@ -27,6 +29,7 @@ def MoveToBack(num_var, ar):
 @njit
 def GenShapedColumnIntegers(range_shape):
     return np.arange(0, np.prod(np.array(range_shape)), 1, np.int32).reshape(range_shape)
+    #return np.arange(np.array(range_shape).prod()).reshape(range_shape)
 
 
 # def PositionIndex(arraywithduplicates):
@@ -53,3 +56,20 @@ def reindex_list(ar):
         else:
             newlist[idx] = seenbefore[val]
     return newlist
+
+def SparseMatrixFromRowsPerColumn(OnesPositions, sort_columns=True):
+    #Assumes that OnesPositions is a 2d numpy array of integers.
+    #First dimension indicates which ORBIT we are considering.
+    #Second dimension indicates which COLUMN we are listing rows for.
+    columncount = OnesPositions.shape[-1]
+    rowcount = int(np.amax(OnesPositions)) + 1
+    if sort_columns:
+        ar_to_broadcast = np.lexsort(OnesPositions)
+    else:
+        ar_to_broadcast = np.arange(columncount)
+    columnspec = np.broadcast_to(ar_to_broadcast, OnesPositions.shape).ravel()
+    return coo_matrix((np.ones(OnesPositions.size, np.uint), (OnesPositions.ravel(), columnspec)),
+                      (rowcount, columncount), dtype=np.uint)
+
+if __name__ == '__main__':
+    print(SparseMatrixFromRowsPerColumn(np.array([[1,1,3],[2,5,3]])).tocsr())
