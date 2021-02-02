@@ -23,8 +23,51 @@ from inflation.utilities import PositionIndex, MoveToBack, GenShapedColumnIntege
 
 @lru_cache(maxsize=16)
 def GenerateEncodingMonomialToRow(original_cardinality_product,
-                                  inflation_order):  # Cached in memory, as this function is called by both inflation matrix and inflation vector construction.
-    monomial_count = int(original_cardinality_product ** inflation_order)
+                                  inflation_order):  # Cached in memory, as this function is called by both inflation matrix and inflation vector construction.    
+    """
+    Parameters
+    ----------
+    original_cardinality_product : int
+        The number of permutations of observable variable configurations given by :math:`(\mbox{cardinality})^{(\mbox{number of observable variables})}`
+         
+    inflation_order : int
+        The order of the inflation matrix.
+
+    Returns
+    -------
+    EncodingMonomialToRow : vector_of_integers
+        A numerical vector where each element represents a row and the value of each element represents the index of that row under the symmetry conditions exerted by the cannonical expressible set of the inflated graph.
+    
+    Notes
+    -----
+    
+    For each row there is a set of symmetric rows produced by the interchange of the copy indecies of the observable variables that create the expressible set. While computing the value of each element of EncodingMonomialToRow, the function chooses the row inside the symmetric set with the smallest index.
+    
+    Examples
+    --------
+    For a graph of 3 observable variables, each with cardinality 4:
+    
+    >>> obs_count=3    
+    >>> card=4    
+    >>> original_cardinality_product=card**obs_count
+    
+    With an inflation order of 2:
+        
+    >>> inflation_order=2    
+    >>> EncodingMonomialToRow=GenerateEncodingMonomialToRow(original_cardinality_product,inflation_order)
+    
+    There will be :math:`4^{3}=4096` rows
+    
+    >>> print(len(EncodingMonomialToRow))
+    >>> 4096
+    
+    The intechange of the copy indecies of the variables that make up the 6 element cannonical expressible set will produce a 2-fold symmetry and therefore the largest row index inside EncodingMonomialToRow will be :math:`(4096/2)-1=2079`.
+    
+    >>> print(EncodingMonomialToRow)
+    >>> [   0    1    2 ... 2076 2078 2079]
+    """
+    
+    monomial_count = int(original_cardinality_product**inflation_order)    
     permutation_count = int(np.math.factorial(inflation_order))
     MonomialIntegers = np.arange(0, monomial_count, 1, np.uint)
     new_shape = np.full(inflation_order, original_cardinality_product)
