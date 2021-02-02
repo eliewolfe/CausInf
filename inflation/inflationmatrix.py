@@ -68,6 +68,9 @@ def EncodeA_ExtraExpressible(obs_count, num_vars, valid_column_orbits, expr_set,
     results[0] = EncodingMonomialToRow.take(EncodingColumnToMonomial).take(valid_column_orbits)
     for i in np.arange(1,row_blocks_count):
         extra_expr_set_flattened = np.hstack(other_expressible_sets[i-1])
+        #It is critical to pass the same ORDER of variables to GenerateEncodingColumnToMonomial and to Find_B_block
+        #In order for names to make sense, I am electing to pass a SORTED version of the flat set.
+        extra_expr_set_flattened.sort()
         results[i] = GenerateEncodingColumnToMonomial(card, num_vars, extra_expr_set_flattened)
     accumulated = np.add.accumulate(np.amax(results, axis=0)+1)
     offsets = np.hstack(([0], accumulated[:-1]))
@@ -121,6 +124,58 @@ def InflationMatrixFromGraph(g, inflation_order, card, extra_expressible=False):
                                                    card))
 
 
+#NEW FUNCTION (Feb 2 2021)
+def Numeric_and_Symbolic_b_block_DIAGONAL(data, inflation_order, obs_count, card):
+    EncodingMonomialToRow = GenerateEncodingMonomialToRow(len(data), inflation_order)
+    s, idx, counts = np.unique(EncodingMonomialToRow, return_index=True, return_counts=True)
+    pre_numeric_b = np.array(data)
+    numeric_b = pre_numeric_b.copy()
+    pre_symbolic_b = np.array(['P(' + ''.join([''.join(str(i)) for i in idx]) + ')' for idx in
+                   np.ndindex(tuple(np.full(obs_count, card, np.uint8)))])
+    symbolic_b = pre_symbolic_b.copy()
+    for i in range(1, inflation_order):
+        numeric_b = np.kron(pre_numeric_b, numeric_b)
+        symbolic_b = np.add.outer(pre_symbolic_b, symbolic_b).ravel()
+    numeric_b_block = np.multiply(numeric_b.take(idx), counts)
+    string_multipliers = np.fromiter(('' if i == 1 else str(i)+'*' for i in counts),np.str_)
+    symbolic_b_block = np.add(string_multipliers, symbolic_b.take(idx))
+    return numeric_b_block, symbolic_b_block
+
+#NEW FUNCTION (Feb 2 2021)
+def Numeric_and_Symbolic_b_block_NON_AI_EXPR(data, other_expressible_set_original, obs_count, card, names):
+    first_indices = np.arange(obs_count)
+    Y = list(other_expressible_set_original[0])
+    X = list(other_expressible_set_original[1])
+    Z = list(other_expressible_set_original[2])
+    # It is critical to pass the same ORDER of variables to GenerateEncodingColumnToMonomial and to Find_B_block
+    # In order for names to make sense, I am electing to pass a SORTED version of the flat set.
+    YXZ = sorted(Y + X + Z)
+    lenY = len(Y)
+    lenX = len(X)
+    lenZ = len(Z)
+    lenYXZ = len(YXZ)
+
+    numeric_b_block = np.einsum(np.einsum(data, first_indices, sorted(X + Y)), sorted(X + Y),
+                                np.einsum(data, first_indices, sorted(X + Z)), sorted(X + Z),
+                                1 / np.einsum(data, first_indices, sorted(X)), sorted(X),
+                                YXZ).ravel()
+
+    lowY = np.arange(lenY).tolist()
+    lowX = np.arange(lenY, lenY + lenX).tolist()
+    lowZ = np.arange(lenY + lenX, lenY + lenX + lenZ).tolist()
+    newshape = tuple(np.full(lenYXZ, card, np.uint8))
+    symbolic_b_block = [
+        'P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX + lowY))).tolist()) + '](' +
+        ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX + lowZ))]) + ')' + \
+        'P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX + lowZ))).tolist()) + '](' +
+        ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX + lowZ))]) + ')' +
+        '/P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX))).tolist()) + '](' +
+        ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX))]) + ')'
+        for idYXZ in np.ndindex(newshape)]
+
+    return numeric_b_block, symbolic_b_block
+
+
 def Generate_b_and_counts(Data, inflation_order):
     """
     Parameters
@@ -169,11 +224,11 @@ def Generate_b_and_counts(Data, inflation_order):
 def FindB(Data, inflation_order):
     return np.multiply(*Generate_b_and_counts(Data, inflation_order))
 
-def MarginalOn(data, card, obs_count, marginal):
-    initial_shape = np.full(obs_count, card, np.uint)
-    reshaped_data = np.reshape(data,tuple(initial_shape))
-    return reshaped_data.transpose(MoveToBack(obs_count, np.array(marginal))).reshape(
-            (-1, card ** len(marginal))).sum(axis=0)
+# def MarginalOn(data, card, obs_count, marginal):
+#     initial_shape = np.full(obs_count, card, np.uint)
+#     reshaped_data = np.reshape(data,tuple(initial_shape))
+#     return reshaped_data.transpose(MoveToBack(obs_count, np.array(marginal))).reshape(
+#            (-1, card ** len(marginal))).sum(axis=0)
 
 def MarginalVectorFromGraph(g, data, inflation_order, card, extra_expressible=False):
     ###WORK IN PROGRESS; still only returns b-vector associated with the diagonal expressible set.###
@@ -193,10 +248,10 @@ def MarginalVectorFromGraph(g, data, inflation_order, card, extra_expressible=Fa
             print(tuple(np.take(obs_names, indices).tolist() for indices in eset))
         return b_diagonal_exp_set
 
-def ReshapedSymbolicProbabilities(names, card, indices):
-    import sympy as sy
-    newshape = tuple(np.full(len(indices), card, np.uint8))
-    return np.reshape(sy.symbols(['P['+''.join(np.take(names, indices).tolist())+'](' + ''.join([''.join(str(i)) for i in idx]) + ')' for idx in np.ndindex(newshape)]),newshape)
+#def ReshapedSymbolicProbabilities(names, card, indices):
+#    import sympy as sy
+#    newshape = tuple(np.full(len(indices), card, np.uint8))
+#    return np.reshape(sy.symbols(['P['+''.join(np.take(names, indices).tolist())+'](' + ''.join([''.join(str(i)) for i in idx]) + ')' for idx in np.ndindex(newshape)]),newshape)
 
 if __name__ == '__main__':
     # In our test example let's compute index [2] separated from indices [4] by indices [1,3]
@@ -205,27 +260,48 @@ if __name__ == '__main__':
     obs_count = 5
     card = 2
     names = ['A','B','C','D','E']
-    first_indices = np.arange(obs_count)
-    #second_indices = first_indices + obs_count
-    #third_indices = second_indices + obs_count
-    Y = [2]
-    X = [1,3]
-    Z = [4]
-    YXZ = Y + X + Z
-    #np.put(second_indices, X, X)
-    #np.put(second_indices, Z, Z)
-    #np.put(third_indices, X, X)
-    #after_summation = np.einsum(data,first_indices,
-    #                            data,second_indices,
-    #                            data,third_indices,
-    #                            YXZ)
+    other_expressible_set_original = [{2},{1,3},{4}]
+    numeric_b_block, symbolic_b_block = Numeric_and_Symbolic_b_block_NON_AI_EXPR(data, other_expressible_set_original, obs_count, card, names)
+    # first_indices = np.arange(obs_count)
+    # #second_indices = first_indices + obs_count
+    # #third_indices = second_indices + obs_count
+    # Y = [2]
+    # X = [1,3]
+    # Z = [4]
+    # # It is critical to pass the same ORDER of variables to GenerateEncodingColumnToMonomial and to Find_B_block
+    # # In order for names to make sense, I am electing to pass a SORTED version of the flat set.
+    # YXZ = sorted(Y + X + Z)
+    # lenY = len(Y)
+    # lenX = len(X)
+    # lenZ = len(Z)
+    # lenYXZ = len(YXZ)
+    # #np.put(second_indices, X, X)
+    # #np.put(second_indices, Z, Z)
+    # #np.put(third_indices, X, X)
+    # #after_summation = np.einsum(data,first_indices,
+    # #                            data,second_indices,
+    # #                            data,third_indices,
+    # #                            YXZ)
+    #
+    # numeric_b_block = np.einsum(np.einsum(data, first_indices, sorted(X + Y)), sorted(X + Y),
+    #                             np.einsum(data, first_indices, sorted(X + Z)), sorted(X + Z),
+    #                             1/np.einsum(data, first_indices, sorted(X)), sorted(X),
+    #                             YXZ).ravel()
+    #
+    # lowY = np.arange(lenY).tolist()
+    # lowX = np.arange(lenY,lenY + lenX).tolist()
+    # lowZ = np.arange(lenY + lenX, lenY + lenX + lenZ).tolist()
+    # newshape = tuple(np.full(lenYXZ, card, np.uint8))
+    # symbolic_b_block = [
+    #  'P[' + ''.join(np.take(names, np.take(YXZ,sorted(lowX + lowY))).tolist()) + '](' +
+    #  ''.join([''.join(str(i)) for i in np.take(idYXZ,sorted(lowX + lowZ))]) + ')' + \
+    #  'P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX + lowZ))).tolist()) + '](' +
+    #  ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX + lowZ))]) + ')' +
+    #  '/P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX))).tolist()) + '](' +
+    #  ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX))]) + ')'
+    #  for idYXZ in np.ndindex(newshape)]
 
-    after_summation = np.einsum(np.einsum(data, first_indices, sorted(X + Y)), sorted(X + Y),
-                                np.einsum(data, first_indices, sorted(X + Z)), sorted(X + Z),
-                                1/np.einsum(data, first_indices, sorted(X)), sorted(X),
-                                Y + X + Z).ravel()
-
-    SymbolicXY = ReshapedSymbolicProbabilities(names, card, sorted(X + Y))
+    #SymbolicXY = ReshapedSymbolicProbabilities(names, card, sorted(X + Y))
 
     #NEW PLAN: Just manually create symbols using ndindex and rescaling everything
 
