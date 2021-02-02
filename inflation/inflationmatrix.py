@@ -70,7 +70,7 @@ def EncodeA_ExtraExpressible(obs_count, num_vars, valid_column_orbits, expr_set,
         extra_expr_set_flattened = np.hstack(other_expressible_sets[i-1])
         #It is critical to pass the same ORDER of variables to GenerateEncodingColumnToMonomial and to Find_B_block
         #In order for names to make sense, I am electing to pass a SORTED version of the flat set.
-        extra_expr_set_flattened.sort()
+        #extra_expr_set_flattened.sort()
         results[i] = GenerateEncodingColumnToMonomial(card, num_vars, extra_expr_set_flattened)
     accumulated = np.add.accumulate(np.amax(results, axis=0)+1)
     offsets = np.hstack(([0], accumulated[:-1]))
@@ -143,33 +143,47 @@ def Numeric_and_Symbolic_b_block_DIAGONAL(data, inflation_order, obs_count, card
 
 #NEW FUNCTION (Feb 2 2021)
 def Numeric_and_Symbolic_b_block_NON_AI_EXPR(data, other_expressible_set_original, obs_count, card, names):
-    first_indices = np.arange(obs_count)
+    all_original_indices = np.arange(obs_count)
     Y = list(other_expressible_set_original[0])
     X = list(other_expressible_set_original[1])
     Z = list(other_expressible_set_original[2])
     # It is critical to pass the same ORDER of variables to GenerateEncodingColumnToMonomial and to Find_B_block
     # In order for names to make sense, I am electing to pass a SORTED version of the flat set.
-    YXZ = sorted(Y + X + Z)
+    YXZ = Y + X + Z
     lenY = len(Y)
     lenX = len(X)
     lenZ = len(Z)
     lenYXZ = len(YXZ)
 
-    numeric_b_block = np.einsum(np.einsum(data, first_indices, sorted(X + Y)), sorted(X + Y),
-                                np.einsum(data, first_indices, sorted(X + Z)), sorted(X + Z),
-                                1 / np.einsum(data, first_indices, sorted(X)), sorted(X),
+    data_reshaped = np.reshape(data,tuple(np.full(obs_count, card, np.uint8)))
+
+    numeric_b_block = np.einsum(np.einsum(data_reshaped, all_original_indices, X + Y), X + Y,
+                                np.einsum(data_reshaped, all_original_indices, X + Z), X + Z,
+                                1 / np.einsum(data_reshaped, all_original_indices, X), X,
                                 YXZ).ravel()
 
     lowY = np.arange(lenY).tolist()
     lowX = np.arange(lenY, lenY + lenX).tolist()
     lowZ = np.arange(lenY + lenX, lenY + lenX + lenZ).tolist()
     newshape = tuple(np.full(lenYXZ, card, np.uint8))
+    # symbolic_b_block = [
+    #     'P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX + lowY))).tolist()) + '](' +
+    #     ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX + lowY))]) + ')' +
+    #     'P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX + lowZ))).tolist()) + '](' +
+    #     ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX + lowZ))]) + ')' +
+    #     '/P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX))).tolist()) + '](' +
+    #     ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX))]) + ')'
+    #     for idYXZ in np.ndindex(newshape)]
     symbolic_b_block = [
-        'P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX + lowY))).tolist()) + '](' +
-        ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX + lowZ))]) + ')' + \
-        'P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX + lowZ))).tolist()) + '](' +
-        ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX + lowZ))]) + ')' +
-        '/P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX))).tolist()) + '](' +
+        'P[' + ''.join(np.take(names, np.take(YXZ, lowY)).tolist()) + '|' +
+        ''.join(np.take(names, np.take(YXZ, lowX)).tolist()) + '](' +
+        ''.join([''.join(str(i)) for i in np.take(idYXZ, lowY)]) + '|' +
+        ''.join([''.join(str(i)) for i in np.take(idYXZ, lowX)]) + ')' +
+        'P[' + ''.join(np.take(names, np.take(YXZ, lowZ)).tolist()) + '|' +
+        ''.join(np.take(names, np.take(YXZ, lowX)).tolist()) + '](' +
+        ''.join([''.join(str(i)) for i in np.take(idYXZ, lowZ)]) + '|' +
+        ''.join([''.join(str(i)) for i in np.take(idYXZ, lowX)]) + ')' +
+        'P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX))).tolist()) + '](' +
         ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX))]) + ')'
         for idYXZ in np.ndindex(newshape)]
 
@@ -256,7 +270,7 @@ def MarginalVectorFromGraph(g, data, inflation_order, card, extra_expressible=Fa
 if __name__ == '__main__':
     # In our test example let's compute index [2] separated from indices [4] by indices [1,3]
     normalize = lambda v: v / np.linalg.norm(v, ord=1)
-    data = normalize(np.arange(1, 2 ** 5 + 1)).reshape(np.full(5, 2, np.uint))
+    data = normalize(np.arange(1, 2 ** 5 + 1)).reshape(np.full(5, 2, np.uint)).ravel().tolist()
     obs_count = 5
     card = 2
     names = ['A','B','C','D','E']

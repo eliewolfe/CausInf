@@ -12,7 +12,8 @@ from igraph import Graph
 def ToTopologicalOrdering(g):
     return g.permute_vertices(np.argsort(g.topological_sorting('out')).tolist())
 
-
+#Feb 2 2021 Breaking changes:
+#Now outputting determinism_checks and expressible_sets as DIFFERENT lists
 def LearnParametersFromGraph(origgraph, hasty=False):
     g = ToTopologicalOrdering(origgraph)
     verts = g.vs
@@ -44,8 +45,15 @@ def LearnParametersFromGraph(origgraph, hasty=False):
             Ys are screened off from U1s by Xs.
             Zs are variables appearing in an expressible set with {Xs,Y} when U3s is different for Xs and Zs)
             """
-            children_of_roots = set().union(*roots["children"])
-            screeningset = children_of_roots.intersection(observed["ancestors"])
+
+            #TEMPORARY BYPASS, WILL REVERT AFTER SPLITTING INTO TWO FUNCTION
+            #children_of_roots = set().union(*roots["children"])
+            #screeningset = children_of_roots.intersection(observed["ancestors"])
+
+            parents_of_observed = set(observed["parents"])
+            descendants_of_roots = set().union(*roots["descendants"])
+            screeningset = parents_of_observed.intersection(descendants_of_roots)
+
             Xs = screeningset.copy()
             for sidx in screeningset:
                 screeningset_rest = screeningset.copy()

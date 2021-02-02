@@ -84,12 +84,12 @@ if __name__ == '__main__':
     
     inflation_order= 2
     card=2
-    g=TriangleGraph
+    g=InstrumentalGraph
     
     TriData=UniformDistributionFromSupport(['000','111'])
     InstrumentalData=UniformDistributionFromSupport(['000','101'])
     BiconfoundingInstrumentalData=UniformDistributionFromSupport(['0000','0100','1011','1111'])
-    Data=TriData
+    Data=InstrumentalData
 
     InfMat=InflationMatrixFromGraph(g, inflation_order, card)
     b=FindB(Data, inflation_order)
