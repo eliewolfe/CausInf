@@ -23,8 +23,51 @@ from inflation.utilities import PositionIndex, MoveToBack, GenShapedColumnIntege
 
 @lru_cache(maxsize=16)
 def GenerateEncodingMonomialToRow(original_cardinality_product,
-                                  inflation_order):  # Cached in memory, as this function is called by both inflation matrix and inflation vector construction.
-    monomial_count = int(original_cardinality_product ** inflation_order)
+                                  inflation_order):  # Cached in memory, as this function is called by both inflation matrix and inflation vector construction.    
+    """
+    Parameters
+    ----------
+    original_cardinality_product : int
+        The number of permutations of observable variable configurations given by :math:`(\mbox{cardinality})^{(\mbox{number of observable variables})}`
+         
+    inflation_order : int
+        The order of the inflation matrix.
+
+    Returns
+    -------
+    EncodingMonomialToRow : vector_of_integers
+        A numerical vector where each element represents a row and the value of each element represents the index of that row under the symmetry conditions exerted by the cannonical expressible set of the inflated graph.
+    
+    Notes
+    -----
+    
+    For each row there is a set of symmetric rows produced by the interchange of the copy indecies of the observable variables that create the expressible set. While computing the value of each element of EncodingMonomialToRow, the function chooses the row inside the symmetric set with the smallest index.
+    
+    Examples
+    --------
+    For a graph of 3 observable variables, each with cardinality 4:
+    
+    >>> obs_count=3    
+    >>> card=4    
+    >>> original_cardinality_product=card**obs_count
+    
+    With an inflation order of 2:
+        
+    >>> inflation_order=2    
+    >>> EncodingMonomialToRow=GenerateEncodingMonomialToRow(original_cardinality_product,inflation_order)
+    
+    There will be :math:`4^{3}=4096` rows
+    
+    >>> print(len(EncodingMonomialToRow))
+    >>> 4096
+    
+    The intechange of the copy indecies of the variables that make up the 6 element cannonical expressible set will produce a 2-fold symmetry and therefore the largest row index inside EncodingMonomialToRow will be :math:`(4096/2)-1=2079`.
+    
+    >>> print(EncodingMonomialToRow)
+    >>> [   0    1    2 ... 2076 2078 2079]
+    """
+    
+    monomial_count = int(original_cardinality_product**inflation_order)    
     permutation_count = int(np.math.factorial(inflation_order))
     MonomialIntegers = np.arange(0, monomial_count, 1, np.uint)
     new_shape = np.full(inflation_order, original_cardinality_product)
@@ -98,7 +141,55 @@ def EncodeA_ExtraExpressible(obs_count, num_vars, valid_column_orbits, expr_set,
 
 
 def InflationMatrixFromGraph(g, inflation_order, card, extra_expressible=False):
-    #Needs documentation!
+    """
+    Parameters
+    ----------
+    g : igraph.Graph
+        The causal graph containing all of the observable and latent variables.
+         
+    inflation_order : int
+        The order of the inflation matrix.
+
+    card : int
+        The cardinality of every observable variable.
+        
+    extra_expressible : bool,optional
+        If True the rows representing the non-cannonical expressible sets are included in the marginal description matrix (default set to False)
+    
+    Returns
+    -------
+    InflationMatrix : scipy.sparse.coo.coo_matrix
+        The marginal description matrix in the form of a sparse matrix in COOrdinate format.
+    
+    Notes
+    -----
+    
+    The columns of the marginal description matrix correspond to different strategies (permutations of the inflated observable variable values) such as:
+    
+    .. math:: P(A_{1},A_{2},...,A_{N},B_{1},...,B_{N},C_{1},...,C_{N})=P(1,0,1,1,...,0) 
+    
+    For the triangle scenario with cardinality 2 where :math:`N` is the inflation order. The rows of this matrix correspond to the marginal distributions containing the inflated observable variables in the expressible sets such as:
+    
+    .. math:: P(A_{1},B_{1},C_{1},A_{4},B_{4},C_{4})=P(0,1,1,0,1,1)
+    
+    Which is a cannonical expressible set of the same scenario where :math:`N=2`. It can be used in a linear program for an infeasibility certificate (see ``inflation.moseklp.InfeasibilityCertificate``) and/or for a set of inequalities that must be satisfied for the compatibility of the distribution (see ``inflation.certificate.Inequality``).
+    
+    Examples
+    --------
+    For the triangle scenario with cardinality 4 and an inflation order of 2:
+    
+    >>> g=igraph.Graph.Formula("X->A,Y->A:B,Z->B:C,X->C")
+    >>> card=4
+    >>> inflation_order=2
+    
+    We would expect to obtain a marginal description matrix with 2123776 columns (reduced from :math:`4^{12}=16777216` by imposing the symmetry conditions of the copy indecies on different strategies) and 2080 rows (reduced from :math:`4^{6}=4096` by imposing the same symmetry conditions on the expressible sets):
+        
+    >>> InfMat = InflationMatrixFromGraph(g, inflation_order, card)
+    >>> print(InfMat.shape)
+    >>> (2080, 2123776)
+    
+    """
+    
     learned_parameters = LearnInflationGraphParameters(g, inflation_order, extra_expressible=True)
     (obs_count, num_vars, expr_set, group_elem, det_assumptions, names) = learned_parameters[:-1]
     #print(names)  # REMOVE THIS PRINTOUT after accepting fixed order of variables.
@@ -306,7 +397,7 @@ if __name__ == '__main__':
     TriangleGraph = Graph.Formula("X->A,Y->A:B,Z->B:C,X->C")
 
     inflation_order = 2
-    card = 2
+    card = 4
 
 
     TriData = UniformDistributionFromSupport(['000', '111'])
@@ -314,8 +405,8 @@ if __name__ == '__main__':
     BiconfoundingInstrumentalData = UniformDistributionFromSupport(['0000', '0100', '1011', '1111'])
 
 
-    g = InstrumentalGraph
-    data = InstrumentalData
+    g = TriangleGraph
+    data = TriData
 
     #InfMat = InflationMatrixFromGraph(g, inflation_order, card)
     #b = FindB(data, inflation_order)
