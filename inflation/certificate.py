@@ -3,16 +3,16 @@
 """
 Cleanup solver output to yield a readable inequality.
 """
-
+from __future__ import absolute_import
 import json
 from collections import defaultdict
 import numpy as np
-import sympy as sy
+#import sympy as sy
 from numba import njit
 from scipy.sparse import csr_matrix
 
-from .inflationmatrix import Generate_b_and_counts
-from .quickgraph import LearnSomeInflationGraphParameters
+#from .inflationmatrix import Generate_b_and_counts
+#from .quickgraph import LearnSomeInflationGraphParameters
 
 
 def WitnessDataTest(y, b, tol):
@@ -128,7 +128,7 @@ def IntelligentRound(y, SpMatrix):
 def Inequality(SpMatrix, B_numeric, B_symbolic, Sol):
     #Modified Feb 2, 2021 to pass B_symbolic as an argument for Inequality
     yRaw = np.array(Sol['x']).ravel()
-    tol = 1 / (np.linalg.norm(B_numeric, np.inf) * np.linalg.norm(yRaw, np.inf) * (10 ** 6))
+    tol = 1 / (np.linalg.norm(B_numeric, np.inf) * np.linalg.norm(yRaw, np.inf) * (10 ** 6)) #TODO: Choose better tolerance function. This is yielding false incompatibility claims.
     if WitnessDataTest(yRaw, B_numeric, tol):
         y = IntelligentRound(yRaw, SpMatrix)
         # print('Now to make things human readable...')

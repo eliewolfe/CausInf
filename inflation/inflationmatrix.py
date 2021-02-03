@@ -6,7 +6,7 @@ Created on Tue Dec 15 16:16:04 2020
 """
 from __future__ import absolute_import
 import numpy as np
-from scipy.sparse import coo_matrix
+#from scipy.sparse import coo_matrix
 from functools import lru_cache
 from itertools import permutations
 
@@ -101,7 +101,7 @@ def InflationMatrixFromGraph(g, inflation_order, card, extra_expressible=False):
     #Needs documentation!
     learned_parameters = LearnInflationGraphParameters(g, inflation_order, extra_expressible=True)
     (obs_count, num_vars, expr_set, group_elem, det_assumptions, names) = learned_parameters[:-1]
-    print(names)  # REMOVE THIS PRINTOUT after accepting fixed order of variables.
+    #print(names)  # REMOVE THIS PRINTOUT after accepting fixed order of variables.
     valid_column_orbits = ValidColumnOrbits(card, num_vars, group_elem, det_assumptions)
     if extra_expressible:
         other_inflated_expressible_sets = learned_parameters[-1]
@@ -206,7 +206,7 @@ def NumericalAndSymbolicVectorsFromGraph(g, data, inflation_order, card, extra_e
         #How should we compute the marginal probability?
         #Given P(ABC) how do we obtain P(AB)P(BC)/P(B) as a vector of appropriate length?
         for eset in other_expressible_sets_original:
-            print(tuple(np.take(obs_names, indices).tolist() for indices in eset))
+            #print(tuple(np.take(obs_names, indices).tolist() for indices in eset))
             numeric_b_block, symbolic_b_block = Numeric_and_Symbolic_b_block_NON_AI_EXPR(data, eset, obs_count, card, names)
             numeric_b.resize(len(numeric_b) + len(numeric_b_block))
             numeric_b[-len(numeric_b_block):] = numeric_b_block

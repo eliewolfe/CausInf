@@ -3,19 +3,40 @@
 """
 Learning a little bit about the inflation graph from the original graph
 """
-
-
+from __future__ import absolute_import
 import numpy as np
-from igraph import Graph
+
 
 
 def ToTopologicalOrdering(g):
     return g.permute_vertices(np.argsort(g.topological_sorting('out')).tolist())
 
+def ToRootLexicographicOrdering(g):
+    """
+
+    Parameters
+    ----------
+    g: an iGraph graph
+
+    Returns
+    -------
+    A copy of g with nodes internally ordered such that root nodes are first and non-root nodes are subsequent.
+    Within each set (root \& nonroot) the nodes are ordered lexicographically.
+    """
+    verts = g.vs
+    verts["isroot"] = [0 == i for i in g.indegree()]
+    root_vertices_igraph = verts.select(isroot=True)
+    nonroot_vertices_igraph = verts.select(isroot=False)
+    optimal_root_node_indices = np.take(root_vertices_igraph.indices,np.argsort(root_vertices_igraph["name"]))
+    optimal_nonroot_node_indices = np.take(nonroot_vertices_igraph.indices, np.argsort(nonroot_vertices_igraph["name"]))
+    new_ordering = np.hstack((optimal_root_node_indices,optimal_nonroot_node_indices))
+    #print(np.array_str(np.take(verts["name"],new_ordering)))
+    return g.permute_vertices(np.argsort(new_ordering).tolist())
+
 #Feb 2 2021 Breaking changes:
 #Now outputting determinism_checks and expressible_sets as DIFFERENT lists
-def LearnOriginalGraphParameters(origgraph, hasty=False):
-    g = ToTopologicalOrdering(origgraph)
+def LearnOriginalGraphParameters(origgraph, hasty = False):
+    g = ToRootLexicographicOrdering(origgraph)
     verts = g.vs
     verts["parents"] = g.get_adjlist('in');
     verts["children"] = g.get_adjlist('out');
@@ -120,21 +141,26 @@ def LearnSomeInflationGraphParameters(g, inflation_order):
 
 
 def QuickGraphAssessment(g):
+    list_of_strings_to_string = lambda l: '['+','.join(l)+']'
+    tuples_of_strings_to_string = lambda l: '(' + ','.join(l) + ')'
     names, parents_of, roots_of, determinism_checks, extra_expressible_sets = LearnOriginalGraphParameters(g, hasty=False)
     graph_structure = list(filter(None, parents_of))
+    latent_count = len(parents_of) - len(graph_structure)
     print("For the graph who's parental structure is given by:")
-    print([':'.join(np.take(names, vals)) + '->' + np.take(names, idx) for idx, vals in enumerate(graph_structure)])
+    print([':'.join(np.take(names, vals)) + '->' + np.take(names, idx+latent_count) for idx, vals in enumerate(graph_structure)])
+    print("We utilize the following ordering of variables: "+list_of_strings_to_string(names))
     print("We identify the following screening-off relationships relevant to enforcing determinism:")
     print("Sets given as (U1s,Y,Xs) with the following meaning:\nYs are screened off from U1s by Xs.")
     for screening in determinism_checks:
-        print(tuple(np.take(names,indices).tolist() for indices in screening))
+        print(tuples_of_strings_to_string(tuple(list_of_strings_to_string(np.take(names,indices).tolist()) for indices in screening)))
     print("We identify the following screening-off non-ai expressible sets:")
     print("Sets given as (Y,Xs,Zs,U3s) with the following meaning:\nYs are screened off from Zs by Xs when U3s is different for (Y,Xs) vs Zs.")
     for screening in extra_expressible_sets:
-        print(tuple(np.take(names,indices).tolist() for indices in screening))
+        print(tuples_of_strings_to_string(tuple(list_of_strings_to_string(np.take(names,indices).tolist()) for indices in screening)))
     print('\u2500'*80+'\n')
 
 if __name__ == '__main__':
+    from igraph import Graph
     InstrumentalGraph = Graph.Formula("U1->X->A->B,U2->A:B")
     Evans14a = Graph.Formula("U1->A:C,U2->A:B:D,U3->B:C:D,A->B,C->D")
     Evans14b = Graph.Formula("U1->A:C,U2->B:C:D,U3->A:D,A->B,B:C->D")
