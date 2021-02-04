@@ -49,7 +49,7 @@ def LearnOriginalGraphParameters(origgraph, hasty = False):
     Returns
     -------
     verts["name"] : list_of_strings
-       A list of strings containing the names of the variables of the graph in topological order.
+       A list of strings containing the names of the variables of the graph in lexicographic order.
        
     verts["parents"] : list_of_lists
         A list of lists where each list contains the parents of a variable's node.
