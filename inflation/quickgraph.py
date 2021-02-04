@@ -35,7 +35,7 @@ def ToRootLexicographicOrdering(g):
 
 #Feb 2 2021 Breaking changes:
 #Now outputting determinism_checks and expressible_sets as DIFFERENT lists
-def LearnOriginalGraphParameters(origgraph, hasty = False):
+def LearnOriginalGraphParameters(g, hasty = False):
     
     """
     Parameters
@@ -97,7 +97,7 @@ def LearnOriginalGraphParameters(origgraph, hasty = False):
     
     """
     
-    g = ToRootLexicographicOrdering(origgraph)
+    g = ToRootLexicographicOrdering(g)
     verts = g.vs
     verts["parents"] = g.get_adjlist('in');
     verts["children"] = g.get_adjlist('out');

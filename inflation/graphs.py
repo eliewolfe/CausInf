@@ -109,7 +109,7 @@ def InflateOtherExpressibleSets(extra_expressible_sets, latent_count, group_gene
         nonai_exp_set = np.hstack((Ys, Xs, Zs_new_world)).take(variable_ordering)  #Changed ordering
         return nonai_exp_set
 
-    return list(map(InflateOneExpressibleSet, filter(lambda screening: len(screening[-1]) > 0, extra_expressible_sets)))
+    return list(map(InflateOneExpressibleSet, extra_expressible_sets))
 
 
 
