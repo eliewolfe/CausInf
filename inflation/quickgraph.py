@@ -36,6 +36,67 @@ def ToRootLexicographicOrdering(g):
 #Feb 2 2021 Breaking changes:
 #Now outputting determinism_checks and expressible_sets as DIFFERENT lists
 def LearnOriginalGraphParameters(origgraph, hasty = False):
+    
+    """
+    Parameters
+    ----------
+    g : igraph.Graph
+        The causal graph containing all of the observable and latent variables.
+         
+    hasty : bool,optional
+        If ``True``, returns a tuple of lists where the first list contains the names of the variables involved, the second list contains the parents of each of these variables in the form of a list-of-lists and the third list contains the roots of each variable again, in the form of a list-of-lists (default set to ``False``)
+
+    Returns
+    -------
+    verts["name"] : list_of_strings
+       A list of strings containing the names of the variables of the graph in topological order.
+       
+    verts["parents"] : list_of_lists
+        A list of lists where each list contains the parents of a variable's node.
+        
+    verts["roots_of"] : list_of_lists
+        A list of lists where each list contains the roots of a variable's node.
+        
+    determinism_checks : list_of_tuples_of_lists
+        Returns the determinism assumptions that could be used to mark invalid strategies when computing the marginal description matrix (see ``inflation.strategies.MarkInvalidStrategies``). In each tuple, the elements of the first list are blocked off from the elements of the second list by the elements of the third list.
+        
+    extra_expressible_sets : list_of_tuples_of_lists
+        Returns the non-ai expressible sets obtained from d-seperation relations. The sets are given as :math:`(Y,\mathbf{X},\mathbf{Z},\mathbf{U_{3}})` where :math:`Y` is screened off from the set of nodes :math:`\mathbf{Z}` by :math:`\mathbf{X}` when the inflated copy of the set :math:`\mathbf{U_{3}}` is set to be different than that for the roots of :math:`\mathbf{X}` and :math:`Y`. 
+            
+    Notes
+    -----
+    
+    The determinism assumptions mark invalid strategies. For example in the instrumental scenario (defined in the example below) the variable :math:`B` is blocked from :math:`U_{1}` by the variable :math:`A` with which it shares its second root variable :math:`U_{2}`. Therefore, if the variable A has the same value for different copies of :math:`U_{1}` then the same copies of :math:`B` must also have the same values. Hence, any startegy that contradicts this logic must be marked and removed from the marginal description matrix.
+    
+    The extra expressible sets arise from the following d-seperation relation:
+        
+    .. math:: \mathbf{Z}^{U_{1}=a, U_{3}=b} \perp_{d} Y^{U_{1}=a, U_{2}=a, U_{3}=a} | \mathbf{X}^{U_{1}=a, U_{2}=a}
+    
+    
+    For :math:`a` :math:`≠` :math:`b`, where the set :math:`\mathbf{X}` screens off :math:`Y` from the set :math:`\mathbf{U_{1}}`, the set :math:`\mathbf{U_{2}}` contains all mutual roots of :math:`\mathbf{X}` and :math:`Y` other than :math:`\mathbf{U_{1}}`, the set :math:`\mathbf{U_{3}}` are all root nodes other than :math:`\mathbf{U_{1}}` and :math:`\mathbf{U_{2}}` and the set :math:`\mathbf{Z}` are all the other nodes which are non-descendants of :math:`\mathbf{U_{2}}`.
+    
+    Examples
+    --------
+    For the instrumental scenario we have:
+    
+    >>> g=Graph.Formula("U1->X->A->B,U2->A:B")
+    >>> names, parents, roots_of, determinism_checks, extra_expressible_sets=LearnOriginalGraphParameters(g, hasty=False)
+    >>> print(names)
+    >>> ['U1', 'U2', 'X', 'A', 'B']
+    >>> print(parents)
+    >>> [[], [], [0], [1, 2], [1, 3]]
+    
+    Here the numbers are the indecies of the variables in ``names`` and the lists represent variables in the same order as in ``names``.
+    
+    >>> print(roots_of)
+    >>> [[0], [1], [0], [0, 1], [0, 1]]
+    >>> print(determinism_checks)
+    >>> [([0], [3], [2]), ([0], [4], [3])]
+    >>> print(extra_expressible_sets)
+    >>> [([3], [2], [4], [1]), ([4], [2], [3], [1])]
+    
+    """
+    
     g = ToRootLexicographicOrdering(origgraph)
     verts = g.vs
     verts["parents"] = g.get_adjlist('in');
