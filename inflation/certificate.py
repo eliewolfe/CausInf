@@ -16,7 +16,7 @@ from scipy.sparse import csr_matrix
 
 
 def WitnessDataTest(y, b, tol):
-    IncompTest = (np.dot(y, b) < tol)
+    IncompTest = (np.amin(y) < 0) and (np.dot(y, b) < tol)
     if IncompTest:
         print('Distribution Compatibility Status: INCOMPATIBLE')
     else:

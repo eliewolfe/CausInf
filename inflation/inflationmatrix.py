@@ -247,10 +247,12 @@ def Numeric_and_Symbolic_b_block_NON_AI_EXPR(data, other_expressible_set_origina
 
     data_reshaped = np.reshape(data,tuple(np.full(obs_count, card, np.uint8)))
 
-    numeric_b_block = np.einsum(np.einsum(data_reshaped, all_original_indices, X + Y), X + Y,
+    np.seterr(divide='ignore')
+    numeric_b_block = np.nan_to_num(np.einsum(np.einsum(data_reshaped, all_original_indices, X + Y), X + Y,
                                 np.einsum(data_reshaped, all_original_indices, X + Z), X + Z,
                                 1 / np.einsum(data_reshaped, all_original_indices, X), X,
-                                YXZ).ravel()
+                                YXZ).ravel())
+    np.seterr(divide='warn')
 
     lowY = np.arange(lenY).tolist()
     lowX = np.arange(lenY, lenY + lenX).tolist()
