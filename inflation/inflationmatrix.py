@@ -248,10 +248,20 @@ def Numeric_and_Symbolic_b_block_NON_AI_EXPR(data, other_expressible_set_origina
     data_reshaped = np.reshape(data,tuple(np.full(obs_count, card, np.uint8)))
 
     np.seterr(divide='ignore')
-    numeric_b_block = np.nan_to_num(np.einsum(np.einsum(data_reshaped, all_original_indices, X + Y), X + Y,
-                                np.einsum(data_reshaped, all_original_indices, X + Z), X + Z,
-                                1 / np.einsum(data_reshaped, all_original_indices, X), X,
-                                YXZ).ravel())
+    marginal_on_XY = np.einsum(data_reshaped, all_original_indices, X + Y)
+    marginal_on_XZ = np.einsum(data_reshaped, all_original_indices, X + Z)
+    marginal_on_X = np.einsum(marginal_on_XY, X + Y, X)
+    # Y_conditional_on_X = np.einsum(marginal_on_XY, X + Y,
+    #                             1 / marginal_on_X, X,
+    #                             Y + X)
+    # numeric_b_block = np.einsum(marginal_on_XZ, X + Z,
+    #                             Y_conditional_on_X, Y + X,
+    #                             YXZ).ravel()
+    numeric_b_block = np.einsum(marginal_on_XY, X + Y,
+                                marginal_on_XZ, X + Z,
+                                np.divide(1.0, marginal_on_X), X,
+                                YXZ).ravel()
+    numeric_b_block[np.isnan(numeric_b_block)] = 0 #Conditioning on zero probability events
     np.seterr(divide='warn')
 
     lowY = np.arange(lenY).tolist()
