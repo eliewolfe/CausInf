@@ -13,8 +13,13 @@ elif hexversion >= 0x3060000:
     from backports.cached_property import cached_property
 else:
     cached_property = property
-
-
+from functools import reduce 
+if __name__ == '__main__':
+    import sys
+    import pathlib
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+from inflation.dimino import dimino_wolfe
+from inflation.utilities import MoveToFront
 
 
 
@@ -169,10 +174,82 @@ class LatentVariableGraph:
         print('\u2500' * 80 + '\n')
 
 
+class InflatedGraph:
+    
+    def __init__(self,g ,inflation_order, extra_expressible=False, debug=False):
+        
+        self.inflation_order=inflation_order
+        self.determinism_checks= LatentVariableGraph(g).determinism_checks
+        self.extra_expressible_sets =LatentVariableGraph(g).extra_expressible_sets  
+        self.obs_count=LatentVariableGraph(g).observed_count 
+        self.latent_count = len(LatentVariableGraph(g).parents_of) - self.obs_count
+        self.root_structure = LatentVariableGraph(g).roots_of[self.latent_count:]
+        self.inflation_depths = np.array(list(map(len, self.root_structure)))
+        self.inflationcopies = inflation_order ** self.inflation_depths
+        self.num_vars = self.inflationcopies.sum()
+        accumulated = np.add.accumulate(inflation_order ** self.inflation_depths)
+        self.offsets = np.hstack(([0], accumulated[:-1]))
+        
+    def CanonicalExpressibleSet(self):
+    # offsets=GenerateOffsets(inflation_order,inflation_depths)
+        order_range = np.arange(self.inflation_order)
+        cannonical_pos = np.empty((self.obs_count, self.inflation_order), dtype=np.int) #uint would give rise to type casting error
+        for i in np.arange(self.obs_count):
+            cannonical_pos[i] = np.sum(np.outer(self.inflation_order ** np.arange(self.inflation_depths[i]), order_range), axis=0) + \
+                                self.offsets[i]
+        return cannonical_pos.T.ravel()
 
+    def GroupGenerators(self):
+        globalstrategyflat = list(np.add(*stuff) for stuff in zip(list(map(np.arange, self.inflationcopies.tolist())), self.offsets))
+        reshapings = np.ones((self.obs_count, self.latent_count), np.uint8)
+        contractings = np.zeros((self.obs_count, self.latent_count), np.object)
+        for idx, elem in enumerate(self.root_structure):
+            reshapings[idx][elem] = self.inflation_order
+            contractings[idx][elem] = np.s_[:]
+        reshapings = list(map(tuple, reshapings))
+        contractings = list(map(tuple, contractings))
+        globalstrategyshaped = list(np.reshape(*stuff) for stuff in zip(globalstrategyflat, reshapings))
+        fullshape = tuple(np.full(self.latent_count, self.inflation_order))
+        if self.inflation_order == 2:
+            inflation_order_gen_count = 1
+        else:
+            inflation_order_gen_count = 2
+        group_generators = np.empty((self.latent_count, self.inflation_order_gen_count, self.num_vars), np.int) #uint would give rise to type casting error
+        for latent_to_explore in np.arange(self.latent_count):
+            for gen_idx in np.arange(inflation_order_gen_count):
+                initialtranspose = MoveToFront(self.latent_count, np.array([latent_to_explore]))
+                inversetranspose = np.hstack((np.array([0]), 1 + np.argsort(initialtranspose)))
+                label_permutation = np.arange(self.inflation_order)
+                if gen_idx == 0:
+                    label_permutation[np.array([0, 1])] = np.array([1, 0])
+                elif gen_idx == 1:
+                    label_permutation = np.roll(label_permutation, 1)
+                global_permutation = np.array(list(
+                    np.broadcast_to(elem, fullshape).transpose(tuple(initialtranspose))[label_permutation] for elem in
+                    globalstrategyshaped))
+                global_permutation = np.transpose(global_permutation, tuple(inversetranspose))
+                global_permutation = np.hstack(
+                    tuple(global_permutation[i][contractings[i]].ravel() for i in np.arange(self.obs_count)))
+                group_generators[latent_to_explore, gen_idx] = global_permutation
+        return group_generators
 
-
-
+    def InflatedDeterminismAssumptions(self, group_generators, exp_set):
+        """
+        Recall that a determinism check is passed in the form of (U1s,Ys,Xs,Zs,U3s) with the following meaning:
+        Ys are screened off from U1s by Xs. (Ys is always a list with only one element.)
+        Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)
+        """
+        def InflateOneDeterminismAssumption(self,screening):
+            U1s = screening[0]
+            XsY = np.array(list(screening[2])+list(screening[1])) - self.latent_count
+            flatset_original_world = np.take(exp_set, XsY)
+            symops = group_generators[U1s, 0]  # Now 2d array
+            flatset_new_world = np.take(reduce(np.take, symops), flatset_original_world)
+            rule = np.vstack((flatset_original_world, flatset_new_world)).T.astype('uint32')
+            rule = rule[:-1, :].T.tolist() + rule[-1, :].T.tolist()
+            return rule
+    
+        return list(map(InflateOneDeterminismAssumption, self.determinism_checks))
 
 
 
@@ -198,9 +275,6 @@ def ToRootLexicographicOrdering(g):
     new_ordering = np.hstack((optimal_root_node_indices,optimal_nonroot_node_indices))
     #print(np.array_str(np.take(verts["name"],new_ordering)))
     return g.permute_vertices(np.argsort(new_ordering).tolist())
-
-
-
 
 
 
