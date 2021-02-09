@@ -73,6 +73,8 @@ class LatentVariableGraph:
         # return [subroots for r in np.arange(1, screenable_roots.size + 1) for subroots in combinations(screenable_roots, r)]
         return chain.from_iterable(combinations(screenable_roots, r) for r in np.arange(1, screenable_roots.size + 1))
 
+
+
     def _identify_determinism_check(self, root_indices, observed_index):
         """
         root_indices is a list of root nodes (integers) which can be screened off.
@@ -80,10 +82,12 @@ class LatentVariableGraph:
         The output will be a tuple of 3 lists
         (U1s,Ys,Xs) with the following meaning: Ys are screened off from U1s by Xs.
         """
+        list_extract_and_union = lambda list_of_lists, indices: set().union(
+            chain.from_iterable(list_of_lists[v] for v in indices))
         parents_of_observed = set(self.parents_of[observed_index])
-        [self.descendants_of[v] for v in root_indices]
-        descendants_of_roots = [self.descendants_of[v] for v in root_indices]
-        descendants_of_roots = set().union(*descendants_of_roots)
+        #descendants_of_roots = [self.descendants_of[v] for v in root_indices]
+        #descendants_of_roots = set().union(*descendants_of_roots)
+        descendants_of_roots = list_extract_and_union(self.descendants_of, root_indices)
         U1s = list(root_indices)
         Y = observed_index
         Xs = list(parents_of_observed.intersection(descendants_of_roots))
@@ -104,8 +108,9 @@ class LatentVariableGraph:
         (Ys,Xs,Zs,U3s) with the following meaning:
         Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)
         """
-        children_of_roots = [self.children_of[v] for v in root_indices]
-        children_of_roots = set().union(*children_of_roots)
+        list_extract_and_union = lambda list_of_lists, indices: set().union(
+            chain.from_iterable(list_of_lists[v] for v in indices))
+        children_of_roots = list_extract_and_union(self.children_of, root_indices)
         screeningset = children_of_roots.intersection(self.ancestors_of[observed])
         Xs = screeningset.copy()
         for sidx in screeningset:
@@ -123,16 +128,14 @@ class LatentVariableGraph:
         roots_of_Xs = [self.roots_of[x] for x in Xs]
         U2s = set().union(*roots_of_Xs).difference(U1s)
 
-        U2s_descendants = [self.descendants_of[u] for u in U2s]
-        U2s_descendants = set().union(*U2s_descendants)
+        U2s_descendants = list_extract_and_union(self.descendants_of, U2s)
         observable_nodes_aside_from_Zs = set(Xs)
         observable_nodes_aside_from_Zs.add(Y)
         Zs = set(self.observed_indices).difference(U2s_descendants).difference(observable_nodes_aside_from_Zs)
 
         roots_of_Y_aside_from_U1s = set(self.roots_of[Y]).difference(U1s)
 
-        roots_of_Zs = [self.roots_of[z] for z in Zs]
-        roots_of_Zs = set().union(*roots_of_Zs)
+        roots_of_Zs = list_extract_and_union(self.roots_of, Zs)
         U3YZ = roots_of_Y_aside_from_U1s.intersection(roots_of_Zs)
         # Adding a sanity filter:
         if len(U3YZ) == 0:
