@@ -177,35 +177,38 @@ class LatentVariableGraph:
         print('\u2500' * 80 + '\n')
 
 
-class InflatedGraph:
+class InflatedGraph(LatentVariableGraph):
     
-    def __init__(self,g ,inflation_order, extra_expressible=False, debug=False):
+    def __init__(self, rawgraph ,inflation_order, extra_expressible=False, debug=False):
         
         self.inflation_order=inflation_order
-        self.determinism_checks= LatentVariableGraph(g).determinism_checks
-        self.extra_expressible_sets =LatentVariableGraph(g).extra_expressible_sets  
-        self.obs_count=LatentVariableGraph(g).observed_count 
-        self.latent_count = len(LatentVariableGraph(g).parents_of) - self.obs_count
-        self.root_structure = LatentVariableGraph(g).roots_of[self.latent_count:]
+        LatentVariableGraph.__init__(self, rawgraph)
+        #self.determinism_checks= LatentVariableGraph(g).determinism_checks
+        #self.extra_expressible_sets =LatentVariableGraph(g).extra_expressible_sets
+        #self.obs_count=LatentVariableGraph(g).observed_count
+        #self.latent_count = len(LatentVariableGraph(g).parents_of) - self.obs_count
+        self.root_structure = self.roots_of[self.latent_count:]
         self.inflation_depths = np.array(list(map(len, self.root_structure)))
-        self.inflationcopies = inflation_order ** self.inflation_depths
-        self.num_vars = self.inflationcopies.sum()
+        self.inflationcopies = self.inflation_order ** self.inflation_depths
+        self.inflated_observed_count = self.inflationcopies.sum()
         accumulated = np.add.accumulate(inflation_order ** self.inflation_depths)
         self.offsets = np.hstack(([0], accumulated[:-1]))
-        
-    def CanonicalExpressibleSet(self):
+
+    @cached_property
+    def diagonal_expressible_set(self):
     # offsets=GenerateOffsets(inflation_order,inflation_depths)
         order_range = np.arange(self.inflation_order)
-        cannonical_pos = np.empty((self.obs_count, self.inflation_order), dtype=np.int) #uint would give rise to type casting error
-        for i in np.arange(self.obs_count):
+        cannonical_pos = np.empty((self.observed_count, self.inflation_order), dtype=np.int) #uint would give rise to type casting error
+        for i in np.arange(self.observed_count):
             cannonical_pos[i] = np.sum(np.outer(self.inflation_order ** np.arange(self.inflation_depths[i]), order_range), axis=0) + \
                                 self.offsets[i]
         return cannonical_pos.T.ravel()
 
-    def GroupGenerators(self):
+    @cached_property
+    def inflation_group_generators(self):
         globalstrategyflat = list(np.add(*stuff) for stuff in zip(list(map(np.arange, self.inflationcopies.tolist())), self.offsets))
-        reshapings = np.ones((self.obs_count, self.latent_count), np.uint8)
-        contractings = np.zeros((self.obs_count, self.latent_count), np.object)
+        reshapings = np.ones((self.observed_count, self.latent_count), np.uint8)
+        contractings = np.zeros((self.observed_count, self.latent_count), np.object)
         for idx, elem in enumerate(self.root_structure):
             reshapings[idx][elem] = self.inflation_order
             contractings[idx][elem] = np.s_[:]
@@ -217,7 +220,7 @@ class InflatedGraph:
             inflation_order_gen_count = 1
         else:
             inflation_order_gen_count = 2
-        group_generators = np.empty((self.latent_count, self.inflation_order_gen_count, self.num_vars), np.int) #uint would give rise to type casting error
+        group_generators = np.empty((self.latent_count, inflation_order_gen_count, self.inflated_observed_count), np.int) #uint would give rise to type casting error
         for latent_to_explore in np.arange(self.latent_count):
             for gen_idx in np.arange(inflation_order_gen_count):
                 initialtranspose = MoveToFront(self.latent_count, np.array([latent_to_explore]))
@@ -232,27 +235,57 @@ class InflatedGraph:
                     globalstrategyshaped))
                 global_permutation = np.transpose(global_permutation, tuple(inversetranspose))
                 global_permutation = np.hstack(
-                    tuple(global_permutation[i][contractings[i]].ravel() for i in np.arange(self.obs_count)))
+                    tuple(global_permutation[i][contractings[i]].ravel() for i in np.arange(self.observed_count)))
                 group_generators[latent_to_explore, gen_idx] = global_permutation
         return group_generators
 
-    def InflatedDeterminismAssumptions(self, group_generators, exp_set):
+    @cached_property
+    def inflation_group_elements(self):
+        return np.array(dimino_wolfe(self.inflation_group_generators.reshape((-1, self.inflated_observed_count))))
+
+    def _InflateOneDeterminismAssumption(self, screening):
+        U1s = screening[0]
+        XsY = np.array(list(screening[2]) + list(screening[1])) - self.latent_count
+        flatset_original_world = np.take(self.diagonal_expressible_set, XsY)
+        symops = self.inflation_group_generators[U1s, 0]  # Now 2d array
+        flatset_new_world = np.take(reduce(np.take, symops), flatset_original_world)
+        rule = np.vstack((flatset_original_world, flatset_new_world)).T.astype('uint32')
+        rule = rule[:-1, :].T.tolist() + rule[-1, :].T.tolist()
+        return rule
+
+    @cached_property
+    def inflated_determinism_checks(self):
         """
         Recall that a determinism check is passed in the form of (U1s,Ys,Xs,Zs,U3s) with the following meaning:
         Ys are screened off from U1s by Xs. (Ys is always a list with only one element.)
         Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)
         """
-        def InflateOneDeterminismAssumption(self,screening):
-            U1s = screening[0]
-            XsY = np.array(list(screening[2])+list(screening[1])) - self.latent_count
-            flatset_original_world = np.take(exp_set, XsY)
-            symops = group_generators[U1s, 0]  # Now 2d array
-            flatset_new_world = np.take(reduce(np.take, symops), flatset_original_world)
-            rule = np.vstack((flatset_original_world, flatset_new_world)).T.astype('uint32')
-            rule = rule[:-1, :].T.tolist() + rule[-1, :].T.tolist()
-            return rule
-    
-        return list(map(InflateOneDeterminismAssumption, self.determinism_checks))
+        return list(map(self._InflateOneDeterminismAssumption, self.determinism_checks))
+
+    def _InflateOneExpressibleSet(self, screening):
+        U3s = screening[-1]
+        (Ys, Xs, Zs) = tuple(
+            map(lambda orig_node_indices: np.take(self.diagonal_expressible_set, np.array(orig_node_indices) - self.latent_count),
+                screening[:-1]))  # Feb 2 2021: reindexed as U1s no longer passed to e_eset
+        symops = self.inflation_group_generators[U3s, 0]  # Now 2d array
+        Zs_new_world = np.take(reduce(np.take, symops), Zs)
+        # The ordering of variables here must reflect the ordering used by Find_b
+        # We can return it as a flat array.
+        variable_ordering = np.argsort(np.hstack(screening[:-1]))
+        # nonai_exp_set = (Ys.tolist(),Xs.tolist(),Zs_new_world.tolist()) #Changed ordering
+        nonai_exp_set = np.hstack((Ys, Xs, Zs_new_world)).take(variable_ordering)  # Changed ordering
+        return nonai_exp_set
+
+    # TODO: Explore larger sets being screened off. What about Ys PLURAL being screened off from U1s? Isn't that worth looking into?
+    @cached_property
+    def inflated_offdiagonal_expressible_sets(self):
+        """
+        New function to identify extra expressible sets.
+        Recall that a screening relation is passed in the form of (U1s,Ys,Xs,Zs,U3s) with the following meaning:
+        Ys are screened off from U1s by Xs. (Ys is always a list with only one element.)
+        Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)
+        """
+        return list(map(self._InflateOneExpressibleSet, self.extra_expressible_sets))
 
 
 
@@ -290,7 +323,9 @@ if __name__ == '__main__':
     IceCreamGraph = Graph.Formula("U1->A,U2->B:D,U3->C:D,A->B:C,B->D")
     BiconfoundingInstrumental = Graph.Formula("U1->A,U2->B:C,U3->B:D,A->B,B->C:D")
     TriangleGraph = Graph.Formula("X->A,Y->A:B,Z->B:C,X->C")
-    [LatentVariableGraph(g).print_assessment() for g in
+    [
+        [LatentVariableGraph(g).print_assessment(),
+         print(InflatedGraph(g,2).inflated_offdiagonal_expressible_sets)] for g in
      (InstrumentalGraph, Evans14a, Evans14b, Evans14c, IceCreamGraph, BiconfoundingInstrumental)]
 
 
