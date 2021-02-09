@@ -21,7 +21,27 @@ if __name__ == '__main__':
 from inflation.dimino import dimino_wolfe
 from inflation.utilities import MoveToFront
 
+def ToRootLexicographicOrdering(g):
+    """
 
+    Parameters
+    ----------
+    g: an iGraph graph
+
+    Returns
+    -------
+    A copy of g with nodes internally ordered such that root nodes are first and non-root nodes are subsequent.
+    Within each set (root \& nonroot) the nodes are ordered lexicographically.
+    """
+    verts = g.vs
+    verts["isroot"] = [0 == i for i in g.indegree()]
+    root_vertices_igraph = verts.select(isroot=True)
+    nonroot_vertices_igraph = verts.select(isroot=False)
+    optimal_root_node_indices = np.take(root_vertices_igraph.indices,np.argsort(root_vertices_igraph["name"]))
+    optimal_nonroot_node_indices = np.take(nonroot_vertices_igraph.indices, np.argsort(nonroot_vertices_igraph["name"]))
+    new_ordering = np.hstack((optimal_root_node_indices,optimal_nonroot_node_indices))
+    #print(np.array_str(np.take(verts["name"],new_ordering)))
+    return g.permute_vertices(np.argsort(new_ordering).tolist())
 
 class LatentVariableGraph:
     # __slots__ = ['g','latent_count','observed_count']
@@ -180,7 +200,7 @@ class LatentVariableGraph:
 
 class InflatedGraph(LatentVariableGraph):
     
-    def __init__(self, rawgraph ,inflation_order, extra_expressible=False, debug=False):
+    def __init__(self, rawgraph ,inflation_order):
         
         self.inflation_order=inflation_order
         LatentVariableGraph.__init__(self, rawgraph)
@@ -301,32 +321,21 @@ class InflatedGraph(LatentVariableGraph):
         print('\u2500' * 80 + '\n')
 
 
-
-
-
-
-def ToRootLexicographicOrdering(g):
-    """
-
-    Parameters
-    ----------
-    g: an iGraph graph
-
-    Returns
-    -------
-    A copy of g with nodes internally ordered such that root nodes are first and non-root nodes are subsequent.
-    Within each set (root \& nonroot) the nodes are ordered lexicographically.
-    """
-    verts = g.vs
-    verts["isroot"] = [0 == i for i in g.indegree()]
-    root_vertices_igraph = verts.select(isroot=True)
-    nonroot_vertices_igraph = verts.select(isroot=False)
-    optimal_root_node_indices = np.take(root_vertices_igraph.indices,np.argsort(root_vertices_igraph["name"]))
-    optimal_nonroot_node_indices = np.take(nonroot_vertices_igraph.indices, np.argsort(nonroot_vertices_igraph["name"]))
-    new_ordering = np.hstack((optimal_root_node_indices,optimal_nonroot_node_indices))
-    #print(np.array_str(np.take(verts["name"],new_ordering)))
-    return g.permute_vertices(np.argsort(new_ordering).tolist())
-
+class ObservationalData:
+    def __init__(self, rawdata, cardinality):
+        self.data_flat = np.array(rawdata).ravel()
+        self.size = self.data_flat.size
+        if isinstance(cardinality,int):
+            self.observed_count = np.rint(np.divide(np.log(size),np.log(cardinality))).astype(np.int)
+            assert self.size == cardinality ** self.observed_count, 'Cardinality of individual variable could not be inferred.'
+            self.cardinalities_array = np.full(self.observed_count, cardinality)
+        else:
+            assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
+            self.observed_count = len(cardinality)
+            assert self.size == np.prod(cardinality), 'Cardinality specification does not match the data.'
+            self.cardinalities_array = np.array(cardinality)
+        self.cardinalities_tuple = tuple(self.cardinalities_array.tolist())
+        self.data_reshaped = np.reshape(self.data_flat,self.cardinalities_tuple)
 
 
 if __name__ == '__main__':
