@@ -156,7 +156,7 @@ class LatentVariableGraph:
         return str([':'.join(np.take(self.names, vals)) + '->' + np.take(self.names, idx + self.latent_count) for idx, vals in
                enumerate(self.parents_of[-self.observed_count:])])
 
-    def print_assessment(self):
+    def print_assessment(self, wait_for_more = False):
         list_of_strings_to_string = lambda l: '[' + ','.join(l) + ']'
         tuples_of_strings_to_string = lambda l: '(' + ','.join(l) + ')'
         print("For the graph who's parental structure is given by:")
@@ -174,7 +174,8 @@ class LatentVariableGraph:
         for screening in self.extra_expressible_sets:
             print(tuples_of_strings_to_string(
                 tuple(list_of_strings_to_string(np.take(self.names, indices).tolist()) for indices in screening)))
-        print('\u2500' * 80 + '\n')
+        if not wait_for_more:
+            print('\u2500' * 80 + '\n')
 
 
 class InflatedGraph(LatentVariableGraph):
@@ -287,6 +288,20 @@ class InflatedGraph(LatentVariableGraph):
         """
         return list(map(self._InflateOneExpressibleSet, self.extra_expressible_sets))
 
+    def print_assessment(self):
+        super().print_assessment(wait_for_more = True)
+        list_of_strings_to_string = lambda l: '[' + ','.join(l) + ']'
+        tuples_of_strings_to_string = lambda l: '(' + ','.join(l) + ')'
+        print("For inflation order %s:" % self.inflation_order)
+        print("The inflated diagonal expressible set is given by:")
+        print(self.diagonal_expressible_set)
+        print("And we count " + str(len(self.extra_expressible_sets)) + " other expressible sets, namely:")
+        for nonai_exp_set in self.inflated_offdiagonal_expressible_sets:
+            print(nonai_exp_set)
+        print('\u2500' * 80 + '\n')
+
+
+
 
 
 
@@ -324,8 +339,7 @@ if __name__ == '__main__':
     BiconfoundingInstrumental = Graph.Formula("U1->A,U2->B:C,U3->B:D,A->B,B->C:D")
     TriangleGraph = Graph.Formula("X->A,Y->A:B,Z->B:C,X->C")
     [
-        [LatentVariableGraph(g).print_assessment(),
-         print(InflatedGraph(g,2).inflated_offdiagonal_expressible_sets)] for g in
+        InflatedGraph(g,2).print_assessment() for g in
      (InstrumentalGraph, Evans14a, Evans14b, Evans14c, IceCreamGraph, BiconfoundingInstrumental)]
 
 
