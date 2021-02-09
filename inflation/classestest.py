@@ -323,13 +323,21 @@ class InflatedGraph(LatentVariableGraph):
 
 class ObservationalData:
     def __init__(self, rawdata, cardinality):
-        self.data_flat = np.array(rawdata).ravel()
+        if isinstance(rawdata, int):  # When only the number of observed variables is specified, but no actual data, we fake it.
+            self.data_flat = np.full(1.0/rawdata,rawdata)
+        else:
+            self.data_flat = np.array(rawdata).ravel()
         self.size = self.data_flat.size
-        if isinstance(cardinality,int):
+        norm = np.linalg.norm(self.data_flat, ord=1)
+        if norm == 0:
+            self.data_flat = np.full(1.0 / self.size, self.size)
+        else: #Manual renormalization.
+            self.data_flat = self.data_flat / norm
+        if isinstance(cardinality, int): #When cardinality is specified as an integer
             self.observed_count = np.rint(np.divide(np.log(size),np.log(cardinality))).astype(np.int)
             assert self.size == cardinality ** self.observed_count, 'Cardinality of individual variable could not be inferred.'
             self.cardinalities_array = np.full(self.observed_count, cardinality)
-        else:
+        else: #When cardinalities are specified as a list
             assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
             self.observed_count = len(cardinality)
             assert self.size == np.prod(cardinality), 'Cardinality specification does not match the data.'
