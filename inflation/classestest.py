@@ -328,7 +328,7 @@ class InflatedGraph(LatentVariableGraph):
         print('\u2500' * 80 + '\n')
 
 
-class ObservationalData:
+class OldObservationalData:
     def __init__(self, rawdata, cardinality):
         if isinstance(rawdata, int):  # When only the number of observed variables is specified, but no actual data, we fake it.
             self.data_flat = np.full(1.0/rawdata,rawdata)
@@ -353,7 +353,7 @@ class ObservationalData:
         self.data_reshaped = np.reshape(self.data_flat,self.cardinalities_tuple)
 
 
-class NewObservationalData:
+class ObservationalData:
     def __init__(self, rawdata, cardinality):
         
         if isinstance(rawdata[0],str):#When the input is in the form ['101','100'] for support certification purposes
@@ -378,16 +378,18 @@ class NewObservationalData:
                 self.cardinalities_array = np.array(cardinality)
 
         
-        if isinstance(rawdata, int):  # When only the number of observed variables is specified, but no actual data, we fake it.
+        elif isinstance(rawdata, int):  # When only the number of observed variables is specified, but no actual data, we fake it.
             if isinstance(cardinality, int): #When cardinality is specified as an integer
                 self.observed_count = rawdata
-                self.data_flat = np.full(cardinality ** self.observed_count,1.0/(cardinality ** self.observed_count))
+                self.original_card_product=cardinality ** self.observed_count
+                self.data_flat = np.full(self.original_card_product,1.0/(self.original_card_product))
                 self.size = self.data_flat.size
                 self.cardinalities_array = np.full(self.observed_count, cardinality)
             else: #When cardinalities are specified as a list
                 assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
                 self.observed_count = rawdata
-                self.data_flat = np.full(np.prod(cardinality),1.0/np.prod(cardinality))
+                self.original_card_product=np.prod(cardinality)
+                self.data_flat = np.full(self.original_card_product,1.0/self.original_card_product)
                 self.size = self.data_flat.size
                 assert self.observed_count ==len(cardinality), 'Cardinality specification does not match the number of observed variables.' 
                 self.cardinalities_array = np.array(cardinality)
@@ -401,12 +403,14 @@ class NewObservationalData:
                 self.data_flat = self.data_flat / norm
             if isinstance(cardinality, int): #When cardinality is specified as an integer
                 self.observed_count = np.rint(np.divide(np.log(self.size),np.log(cardinality))).astype(np.int)
-                assert self.size == cardinality ** self.observed_count, 'Cardinality of individual variable could not be inferred.'
+                self.original_card_product=cardinality ** self.observed_count
+                assert self.size == self.original_card_product, 'Cardinality of individual variable could not be inferred.'
                 self.cardinalities_array = np.full(self.observed_count, cardinality)
             else: #When cardinalities are specified as a list
                 assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
                 self.observed_count = len(cardinality)
-                assert self.size == np.prod(cardinality), 'Cardinality specification does not match the data.'
+                self.original_card_product=np.prod(cardinality)
+                assert self.size == self.original_card_product, 'Cardinality specification does not match the data.'
                 self.cardinalities_array = np.array(cardinality)
         self.cardinalities_tuple = tuple(self.cardinalities_array.tolist())
         self.data_reshaped = np.reshape(self.data_flat,self.cardinalities_tuple)
@@ -417,25 +421,57 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
          InflatedGraph.__init__(self, rawgraph,inflation_order)
          ObservationalData.__init__(self,rawdata,card)
     
-    def MarkInvalidStrategies(self,cards, num_var, det_assumptions):
-        ColumnIntegers = GenShapedColumnIntegers(self.cardinalities_tuple)
-        for detrule in det_assumptions:
-            initialtranspose = MoveToFront(num_var, np.hstack(tuple(detrule)))
+    def MarkedInvalidStrategies(self):
+        initialshape = self.cardinalities_tuple 
+        ColumnIntegers = GenShapedColumnIntegers(tuple(initialshape))
+        for detrule in self.inflated_determinism_checks:
+            initialtranspose = MoveToFront(self.inflated_observed_count, np.hstack(tuple(detrule)))
             inversetranspose = np.argsort(initialtranspose)
-            parentsdimension1=1
-            for var in detrule[0]:
-                parentsdimension1=parentsdimension1*cards[var]
-            parentsdimension2=1
-            for var in detrule[1]:
-                parentsdimension2=parentsdimension2*cards[var]
-            intermediateshape = (parentsdimension1, parentsdimension2, cards[detrule[2]], cards[detrule[3]], -1);
+            parentsdimension = card ** len(detrule[1])
+            intermediateshape = (parentsdimension, parentsdimension, card, card, -1);
             ColumnIntegers = ColumnIntegers.transpose(tuple(initialtranspose)).reshape(intermediateshape)
-            for i in np.arange(min(parentsdimension1,parentsdimension2)):
-                for j in np.arange(cards[detrule[2]] - 1):
-                    for k in np.arange(j + 1, cards[detrule[3]]):
+            for i in np.arange(parentsdimension):
+                for j in np.arange(card - 1):
+                    for k in np.arange(j + 1, card):
                         ColumnIntegers[i, i, j, k] = -1
-            ColumnIntegers = ColumnIntegers.reshape(cards).transpose(tuple(inversetranspose))
+            ColumnIntegers = ColumnIntegers.reshape(initialshape).transpose(tuple(inversetranspose))
         return ColumnIntegers
+
+
+    def ValidColumnOrbits(card, num_vars, group_elem, det_assumptions=[]):
+        ColumnIntegers = MarkInvalidStrategies(card, num_vars, det_assumptions)
+        group_elements = group_elem  # GroupElementsFromGenerators(GroupGeneratorsFromSwaps(num_var,anc_con))
+        group_order = len(group_elements)
+        AMatrix = np.empty([group_order, card ** num_vars], np.int32)
+        AMatrix[0] = ColumnIntegers.flat  # Assuming first group element is the identity
+        for i in np.arange(1, group_order):
+            AMatrix[i] = np.transpose(ColumnIntegers, group_elements[i]).flat
+        minima = np.amin(AMatrix, axis=0)
+        AMatrix = np.compress(minima == np.abs(AMatrix[0]), AMatrix, axis=1)
+        # print(AMatrix.shape)
+        return AMatrix
+
+    
+    #The following is commented out for the later application of mixed cardinality
+    #def MarkInvalidStrategies(self,cards, num_var, det_assumptions):
+     #   ColumnIntegers = GenShapedColumnIntegers(self.cardinalities_tuple)
+      #  for detrule in det_assumptions:
+       #     initialtranspose = MoveToFront(num_var, np.hstack(tuple(detrule)))
+        #    inversetranspose = np.argsort(initialtranspose)
+         #   parentsdimension1=1
+          #  for var in detrule[0]:
+           #     parentsdimension1=parentsdimension1*cards[var]
+           # parentsdimension2=1
+           # for var in detrule[1]:
+            #    parentsdimension2=parentsdimension2*cards[var]
+           # intermediateshape = (parentsdimension1, parentsdimension2, cards[detrule[2]], cards[detrule[3]], -1);
+           # ColumnIntegers = ColumnIntegers.transpose(tuple(initialtranspose)).reshape(intermediateshape)
+           # for i in np.arange(min(parentsdimension1,parentsdimension2)):
+            #    for j in np.arange(cards[detrule[2]] - 1):
+             #       for k in np.arange(j + 1, cards[detrule[3]]):
+              #          ColumnIntegers[i, i, j, k] = -1
+            #ColumnIntegers = ColumnIntegers.reshape(cards).transpose(tuple(inversetranspose))
+        #return ColumnIntegers
         
 
 if __name__ == '__main__':
