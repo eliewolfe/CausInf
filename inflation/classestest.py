@@ -19,7 +19,7 @@ if __name__ == '__main__':
     import pathlib
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from inflation.dimino import dimino_wolfe
-from inflation.utilities import MoveToFront
+from inflation.utilities import MoveToFront,GenShapedColumnIntegers
 
 def ToRootLexicographicOrdering(g):
     """
@@ -42,6 +42,13 @@ def ToRootLexicographicOrdering(g):
     new_ordering = np.hstack((optimal_root_node_indices,optimal_nonroot_node_indices))
     #print(np.array_str(np.take(verts["name"],new_ordering)))
     return g.permute_vertices(np.argsort(new_ordering).tolist())
+
+def MixedCardinalityBaseConversion(cardinality, string):
+    card=np.array([cardinality[i]**(len(cardinality)-(i+1)) for i in range(len(cardinality))])
+    str_to_array=np.array([int(i) for i in string])
+    return np.dot(card,str_to_array)
+    
+
 
 class LatentVariableGraph:
     # __slots__ = ['g','latent_count','observed_count']
@@ -345,6 +352,89 @@ class ObservationalData:
         self.cardinalities_tuple = tuple(self.cardinalities_array.tolist())
         self.data_reshaped = np.reshape(self.data_flat,self.cardinalities_tuple)
 
+
+class NewObservationalData:
+    def __init__(self, rawdata, cardinality):
+        
+        if isinstance(rawdata[0],str):#When the input is in the form ['101','100'] for support certification purposes
+            numevents = len(rawdata)
+            if isinstance(cardinality, int): #When cardinality is specified as an integer
+                self.observed_count = len(rawdata[0])
+                self.original_card_product= cardinality ** self.observed_count               
+                data = np.zeros(self.original_card_product ** self.observed_count)
+                data[list(map(lambda s: int(s,cardinality),rawdata))] = 1/numevents
+                self.data_flat=data
+                self.size = self.data_flat.size
+                self.cardinalities_array = np.full(self.observed_count, cardinality)
+            else: #When cardinalities are specified as a list
+                assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
+                self.observed_count = len(rawdata[0])
+                self.original_card_product=np.prod(cardinality)
+                data = np.zeros(self.original_card_product ** self.observed_count)
+                data[list(map(lambda s: MixedCardinalityBaseConversion(cardinality, s),rawdata))] = 1/numevents
+                self.data_flat=data
+                self.size = self.data_flat.size
+                assert self.observed_count==len(cardinality), 'Cardinality specification does not match the number of observed variables.' 
+                self.cardinalities_array = np.array(cardinality)
+
+        
+        if isinstance(rawdata, int):  # When only the number of observed variables is specified, but no actual data, we fake it.
+            if isinstance(cardinality, int): #When cardinality is specified as an integer
+                self.observed_count = rawdata
+                self.data_flat = np.full(cardinality ** self.observed_count,1.0/(cardinality ** self.observed_count))
+                self.size = self.data_flat.size
+                self.cardinalities_array = np.full(self.observed_count, cardinality)
+            else: #When cardinalities are specified as a list
+                assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
+                self.observed_count = rawdata
+                self.data_flat = np.full(np.prod(cardinality),1.0/np.prod(cardinality))
+                self.size = self.data_flat.size
+                assert self.observed_count ==len(cardinality), 'Cardinality specification does not match the number of observed variables.' 
+                self.cardinalities_array = np.array(cardinality)
+        else:
+            self.data_flat = np.array(rawdata).ravel()
+            self.size = self.data_flat.size
+            norm = np.linalg.norm(self.data_flat, ord=1)
+            if norm == 0:
+                self.data_flat = np.full(1.0 / self.size, self.size)
+            else: #Manual renormalization.
+                self.data_flat = self.data_flat / norm
+            if isinstance(cardinality, int): #When cardinality is specified as an integer
+                self.observed_count = np.rint(np.divide(np.log(self.size),np.log(cardinality))).astype(np.int)
+                assert self.size == cardinality ** self.observed_count, 'Cardinality of individual variable could not be inferred.'
+                self.cardinalities_array = np.full(self.observed_count, cardinality)
+            else: #When cardinalities are specified as a list
+                assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
+                self.observed_count = len(cardinality)
+                assert self.size == np.prod(cardinality), 'Cardinality specification does not match the data.'
+                self.cardinalities_array = np.array(cardinality)
+        self.cardinalities_tuple = tuple(self.cardinalities_array.tolist())
+        self.data_reshaped = np.reshape(self.data_flat,self.cardinalities_tuple)
+
+class InflationProblem(LatentVariableGraph,ObservationalData):
+    
+    def __init__(self,rawgraph,rawdata,card,inflation_order):
+         InflatedGraph.__init__(self, rawgraph,inflation_order)
+         ObservationalData.__init__(self,rawdata,card)
+    
+    def MarkInvalidStrategies(self,cards, num_var, det_assumptions):
+        ColumnIntegers = GenShapedColumnIntegers(self.cardinalities_tuple)
+        for detrule in det_assumptions:
+            initialtranspose = MoveToFront(num_var, np.hstack(tuple(detrule)))
+            inversetranspose = np.argsort(initialtranspose)
+            parentsdimension=1
+            for var in detrule[1]:
+                parentsdimension=parentsdimension*cards[var]
+            parentsdimension = card ** len(detrule[1])
+            intermediateshape = (parentsdimension, parentsdimension, card, card, -1);
+            ColumnIntegers = ColumnIntegers.transpose(tuple(initialtranspose)).reshape(intermediateshape)
+            for i in np.arange(parentsdimension):
+                for j in np.arange(card - 1):
+                    for k in np.arange(j + 1, card):
+                        ColumnIntegers[i, i, j, k] = -1
+            ColumnIntegers = ColumnIntegers.reshape(initialshape).transpose(tuple(inversetranspose))
+        return ColumnIntegers
+        
 
 if __name__ == '__main__':
     from igraph import Graph
