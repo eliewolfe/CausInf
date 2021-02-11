@@ -422,17 +422,19 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
         for detrule in det_assumptions:
             initialtranspose = MoveToFront(num_var, np.hstack(tuple(detrule)))
             inversetranspose = np.argsort(initialtranspose)
-            parentsdimension=1
+            parentsdimension1=1
+            for var in detrule[0]:
+                parentsdimension1=parentsdimension1*cards[var]
+            parentsdimension2=1
             for var in detrule[1]:
-                parentsdimension=parentsdimension*cards[var]
-            parentsdimension = card ** len(detrule[1])
-            intermediateshape = (parentsdimension, parentsdimension, card, card, -1);
+                parentsdimension2=parentsdimension2*cards[var]
+            intermediateshape = (parentsdimension1, parentsdimension2, cards[detrule[2]], cards[detrule[3]], -1);
             ColumnIntegers = ColumnIntegers.transpose(tuple(initialtranspose)).reshape(intermediateshape)
-            for i in np.arange(parentsdimension):
-                for j in np.arange(card - 1):
-                    for k in np.arange(j + 1, card):
+            for i in np.arange(min(parentsdimension1,parentsdimension2)):
+                for j in np.arange(cards[detrule[2]] - 1):
+                    for k in np.arange(j + 1, cards[detrule[3]]):
                         ColumnIntegers[i, i, j, k] = -1
-            ColumnIntegers = ColumnIntegers.reshape(initialshape).transpose(tuple(inversetranspose))
+            ColumnIntegers = ColumnIntegers.reshape(cards).transpose(tuple(inversetranspose))
         return ColumnIntegers
         
 
