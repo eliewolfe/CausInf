@@ -5,7 +5,7 @@ Learning a little bit about the inflation graph from the original graph
 """
 from __future__ import absolute_import
 import numpy as np
-from itertools import combinations, chain
+from itertools import combinations, chain, permutations
 from sys import hexversion
 if hexversion >= 0x3080000:
     from functools import cached_property
@@ -19,7 +19,7 @@ if __name__ == '__main__':
     import pathlib
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from inflation.dimino import dimino_wolfe
-from inflation.utilities import MoveToFront,GenShapedColumnIntegers
+from inflation.utilities import MoveToFront,GenShapedColumnIntegers, PositionIndex, MoveToBack, SparseMatrixFromRowsPerColumn
 
 def ToRootLexicographicOrdering(g):
     """
@@ -328,31 +328,6 @@ class InflatedGraph(LatentVariableGraph):
         print('\u2500' * 80 + '\n')
 
 
-class OldObservationalData:
-    def __init__(self, rawdata, cardinality):
-        if isinstance(rawdata, int):  # When only the number of observed variables is specified, but no actual data, we fake it.
-            self.data_flat = np.full(1.0/rawdata,rawdata)
-        else:
-            self.data_flat = np.array(rawdata).ravel()
-        self.size = self.data_flat.size
-        norm = np.linalg.norm(self.data_flat, ord=1)
-        if norm == 0:
-            self.data_flat = np.full(1.0 / self.size, self.size)
-        else: #Manual renormalization.
-            self.data_flat = self.data_flat / norm
-        if isinstance(cardinality, int): #When cardinality is specified as an integer
-            self.observed_count = np.rint(np.divide(np.log(size),np.log(cardinality))).astype(np.int)
-            assert self.size == cardinality ** self.observed_count, 'Cardinality of individual variable could not be inferred.'
-            self.cardinalities_array = np.full(self.observed_count, cardinality)
-        else: #When cardinalities are specified as a list
-            assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
-            self.observed_count = len(cardinality)
-            assert self.size == np.prod(cardinality), 'Cardinality specification does not match the data.'
-            self.cardinalities_array = np.array(cardinality)
-        self.cardinalities_tuple = tuple(self.cardinalities_array.tolist())
-        self.data_reshaped = np.reshape(self.data_flat,self.cardinalities_tuple)
-
-
 class ObservationalData:
     def __init__(self, rawdata, cardinality):
         
@@ -420,6 +395,8 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
     def __init__(self,rawgraph,rawdata,card,inflation_order):
          InflatedGraph.__init__(self, rawgraph,inflation_order)
          ObservationalData.__init__(self,rawdata,card)
+         assert isinstance(self.cardinalities_array, all(i == list(self.cardinalities_array)[0] for i in list(card))), 'This class does not support mixed cardinalities yet.'
+         self.cardinality=self.cardinalities_array[0]
     
     def MarkedInvalidStrategies(self):
         initialshape = self.cardinalities_tuple 
@@ -427,30 +404,171 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
         for detrule in self.inflated_determinism_checks:
             initialtranspose = MoveToFront(self.inflated_observed_count, np.hstack(tuple(detrule)))
             inversetranspose = np.argsort(initialtranspose)
-            parentsdimension = card ** len(detrule[1])
-            intermediateshape = (parentsdimension, parentsdimension, card, card, -1);
+            parentsdimension = self.cardinality ** len(detrule[1])
+            intermediateshape = (parentsdimension, parentsdimension, self.cardinality , self.cardinality , -1);
             ColumnIntegers = ColumnIntegers.transpose(tuple(initialtranspose)).reshape(intermediateshape)
             for i in np.arange(parentsdimension):
-                for j in np.arange(card - 1):
-                    for k in np.arange(j + 1, card):
+                for j in np.arange(self.cardinality  - 1):
+                    for k in np.arange(j + 1, self.cardinality ):
                         ColumnIntegers[i, i, j, k] = -1
             ColumnIntegers = ColumnIntegers.reshape(initialshape).transpose(tuple(inversetranspose))
         return ColumnIntegers
 
 
-    def ValidColumnOrbits(card, num_vars, group_elem, det_assumptions=[]):
-        ColumnIntegers = MarkInvalidStrategies(card, num_vars, det_assumptions)
-        group_elements = group_elem  # GroupElementsFromGenerators(GroupGeneratorsFromSwaps(num_var,anc_con))
-        group_order = len(group_elements)
-        AMatrix = np.empty([group_order, card ** num_vars], np.int32)
+    def ValidColumnOrbits(self):
+        ColumnIntegers = self.MarkInvalidStrategies
+        group_order = len(self.inflation_group_elements)
+        AMatrix = np.empty([group_order, self.cardinality ** self.inflated_observed_count], np.int32)
         AMatrix[0] = ColumnIntegers.flat  # Assuming first group element is the identity
         for i in np.arange(1, group_order):
-            AMatrix[i] = np.transpose(ColumnIntegers, group_elements[i]).flat
+            AMatrix[i] = np.transpose(ColumnIntegers, self.inflation_group_elements[i]).flat
         minima = np.amin(AMatrix, axis=0)
         AMatrix = np.compress(minima == np.abs(AMatrix[0]), AMatrix, axis=1)
         # print(AMatrix.shape)
         return AMatrix
 
+    def EncodedMonomialToRow(self):  # Cached in memory, as this function is called by both inflation matrix and inflation vector construction.    
+        """
+        Parameters
+        ----------
+        original_cardinality_product : int
+            The number of permutations of observable variable configurations given by :math:`(\mbox{cardinality})^{(\mbox{number of observable variables})}`
+             
+        inflation_order : int
+            The order of the inflation matrix.
+    
+        Returns
+        -------
+        EncodingMonomialToRow : vector_of_integers
+            A numerical vector where each element represents a row and the value of each element represents the index of that row under the symmetry conditions exerted by the cannonical expressible set of the inflated graph.
+        
+        Notes
+        -----
+        
+        For each row there is a set of symmetric rows produced by the interchange of the copy indecies of the observable variables that create the expressible set. While computing the value of each element of EncodingMonomialToRow, the function chooses the row inside the symmetric set with the smallest index.
+        
+        Examples
+        --------
+        For a graph of 3 observable variables, each with cardinality 4:
+        
+        >>> obs_count=3    
+        >>> card=4    
+        >>> original_cardinality_product=card**obs_count
+        
+        With an inflation order of 2:
+            
+        >>> inflation_order=2    
+        >>> EncodingMonomialToRow=GenerateEncodingMonomialToRow(original_cardinality_product,inflation_order)
+        
+        There will be :math:`4^{3}=4096` rows
+        
+        >>> print(len(EncodingMonomialToRow))
+        >>> 4096
+        
+        The intechange of the copy indecies of the variables that make up the 6 element cannonical expressible set will produce a 2-fold symmetry and therefore the largest row index inside EncodingMonomialToRow will be :math:`(4096/2)-1=2079`.
+        
+        >>> print(EncodingMonomialToRow)
+        >>> [   0    1    2 ... 2076 2078 2079]
+        """
+        
+        monomial_count = int(self.original_card_product**self.inflation_order)    
+        permutation_count = int(np.math.factorial(self.inflation_order))
+        MonomialIntegers = np.arange(0, monomial_count, 1, np.uint)
+        new_shape = np.full(self.inflation_order, self.original_card_product_product)
+        MonomialIntegersPermutations = np.empty([permutation_count, monomial_count], np.uint)
+        IndexPermutations = list(permutations(np.arange(self.inflation_order)))
+        MonomialIntegersPermutations[0] = MonomialIntegers
+        MonomialIntegers = MonomialIntegers.reshape(new_shape)
+        for i in np.arange(1, permutation_count):
+            MonomialIntegersPermutations[i] = np.transpose(MonomialIntegers, IndexPermutations[i]).flat
+        return PositionIndex(np.amin(
+            MonomialIntegersPermutations, axis=0))
+ 
+    def EncodedColumnToMonomial(self,expr_set):
+        #Can be used for off-diagonal expressible sets with no adjustment!
+        initialshape = np.full(self.inflated_observed_count, self.cardinality, np.uint)
+        ColumnIntegers = GenShapedColumnIntegers(tuple(initialshape))
+        ColumnIntegers = ColumnIntegers.transpose(MoveToBack(self.inflated_observed_count, np.array(expr_set))).reshape(
+            (-1, self.cardinality ** len(expr_set)))
+        EncodingColumnToMonomial = np.empty(self.cardinality ** self.inflated_observed_count, np.uint32)
+        EncodingColumnToMonomial[ColumnIntegers] = np.arange(self.cardinality ** len(expr_set))
+        return EncodingColumnToMonomial
+    
+    def EncodedA(self):
+        result = self.EncodedMonomialToRow.take(self.EncodedColumnToMonomial(self.diagonal_expressible_set)).take(self.ValidColumnOrbits)
+        # Once the encoding is done, the order of the columns can be tweaked at will!
+        result.sort(axis=0)  # in-place sort
+        return result
+    
+    def EncodedA_ExtraExpressible(self):
+
+        row_blocks_count=len(self.inflated_offdiagonal_expressible_sets)+1
+        results = np.empty(np.hstack((row_blocks_count,self.ValidColumnOrbits.shape)), np.uint32)
+        results[0] = self.EncodedMonomialToRow.take(self.EncodedColumnToMonomial(self.diagonal_expressible_set)).take(self.ValidColumnOrbits)
+        for i in np.arange(1,row_blocks_count):
+            #It is critical to pass the same ORDER of variables to GenerateEncodingColumnToMonomial and to Find_B_block
+            #In order for names to make sense, I am electing to pass a SORTED version of the flat set, see InflateOneExpressibleSet
+            results[i] = self.EncodedColumnToMonomial(self.inflated_offdiagonal_expressible_sets[i-1]).take(self.ValidColumnOrbits)
+        accumulated = np.add.accumulate(np.amax(results, axis=(1,2))+1)
+        offsets = np.hstack(([0], accumulated[:-1]))
+        # Once the encoding is done, the order of the columns can be tweaked at will!
+        #result.sort(axis=0)  # in-place sort
+        return np.hstack(results+offsets[:, np.newaxis, np.newaxis])
+    
+    def InflationMatrix(self, extra_expressible=False):
+        """
+        Parameters
+        ----------
+        g : igraph.Graph
+            The causal graph containing all of the observable and latent variables.
+             
+        inflation_order : int
+            The order of the inflation matrix.
+    
+        card : int
+            The cardinality of every observable variable.
+            
+        extra_expressible : bool,optional
+            If True the rows representing the non-cannonical expressible sets are included in the marginal description matrix (default set to False)
+        
+        Returns
+        -------
+        InflationMatrix : scipy.sparse.coo.coo_matrix
+            The marginal description matrix in the form of a sparse matrix in COOrdinate format.
+        
+        Notes
+        -----
+        
+        The columns of the marginal description matrix correspond to different strategies (permutations of the inflated observable variable values) such as:
+        
+        .. math:: P(A_{1},A_{2},...,A_{N},B_{1},...,B_{N},C_{1},...,C_{N})=P(1,0,1,1,...,0) 
+        
+        For the triangle scenario with cardinality 2 where :math:`N` is the inflation order. The rows of this matrix correspond to the marginal distributions containing the inflated observable variables in the expressible sets such as:
+        
+        .. math:: P(A_{1},B_{1},C_{1},A_{4},B_{4},C_{4})=P(0,1,1,0,1,1)
+        
+        Which is a cannonical expressible set of the same scenario where :math:`N=2`. It can be used in a linear program for an infeasibility certificate (see ``inflation.moseklp.InfeasibilityCertificate``) and/or for a set of inequalities that must be satisfied for the compatibility of the distribution (see ``inflation.certificate.Inequality``).
+        
+        Examples
+        --------
+        For the triangle scenario with cardinality 4 and an inflation order of 2:
+        
+        >>> g=igraph.Graph.Formula("X->A,Y->A:B,Z->B:C,X->C")
+        >>> card=4
+        >>> inflation_order=2
+        
+        We would expect to obtain a marginal description matrix with 2123776 columns (reduced from :math:`4^{12}=16777216` by imposing the symmetry conditions of the copy indecies on different strategies) and 2080 rows (reduced from :math:`4^{6}=4096` by imposing the same symmetry conditions on the expressible sets):
+            
+        >>> InfMat = InflationMatrixFromGraph(g, inflation_order, card)
+        >>> print(InfMat.shape)
+        >>> (2080, 2123776)
+        
+        """
+        
+        if extra_expressible:
+            return SparseMatrixFromRowsPerColumn(self.EncodedA_ExtraExpressible)
+        else:
+            return SparseMatrixFromRowsPerColumn(self.EncodedA)
     
     #The following is commented out for the later application of mixed cardinality
     #def MarkInvalidStrategies(self,cards, num_var, det_assumptions):
