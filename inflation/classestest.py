@@ -427,7 +427,7 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
         # print(AMatrix.shape)
         return AMatrix
 
-    def EncodedMonomialToRow(self):  # Cached in memory, as this function is called by both inflation matrix and inflation vector construction.    
+    def EncodedMonomialToRow(self, product):  # Cached in memory, as this function is called by both inflation matrix and inflation vector construction.    
         """
         Parameters
         ----------
@@ -471,10 +471,10 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
         >>> [   0    1    2 ... 2076 2078 2079]
         """
         
-        monomial_count = int(self.original_card_product**self.inflation_order)    
+        monomial_count = int(product**self.inflation_order)    
         permutation_count = int(np.math.factorial(self.inflation_order))
         MonomialIntegers = np.arange(0, monomial_count, 1, np.uint)
-        new_shape = np.full(self.inflation_order, self.original_card_product_product)
+        new_shape = np.full(self.inflation_order, product)
         MonomialIntegersPermutations = np.empty([permutation_count, monomial_count], np.uint)
         IndexPermutations = list(permutations(np.arange(self.inflation_order)))
         MonomialIntegersPermutations[0] = MonomialIntegers
@@ -495,7 +495,7 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
         return EncodingColumnToMonomial
     
     def EncodedA(self):
-        result = self.EncodedMonomialToRow.take(self.EncodedColumnToMonomial(self.diagonal_expressible_set)).take(self.ValidColumnOrbits)
+        result = self.EncodedMonomialToRow(self.original_card_product).take(self.EncodedColumnToMonomial(self.diagonal_expressible_set)).take(self.ValidColumnOrbits)
         # Once the encoding is done, the order of the columns can be tweaked at will!
         result.sort(axis=0)  # in-place sort
         return result
@@ -504,7 +504,7 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
 
         row_blocks_count=len(self.inflated_offdiagonal_expressible_sets)+1
         results = np.empty(np.hstack((row_blocks_count,self.ValidColumnOrbits.shape)), np.uint32)
-        results[0] = self.EncodedMonomialToRow.take(self.EncodedColumnToMonomial(self.diagonal_expressible_set)).take(self.ValidColumnOrbits)
+        results[0] = self.EncodedMonomialToRow(self.original_card_product).take(self.EncodedColumnToMonomial(self.diagonal_expressible_set)).take(self.ValidColumnOrbits)
         for i in np.arange(1,row_blocks_count):
             #It is critical to pass the same ORDER of variables to GenerateEncodingColumnToMonomial and to Find_B_block
             #In order for names to make sense, I am electing to pass a SORTED version of the flat set, see InflateOneExpressibleSet
@@ -570,7 +570,106 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
         else:
             return SparseMatrixFromRowsPerColumn(self.EncodedA)
     
-    #The following is commented out for the later application of mixed cardinality
+    def Numeric_and_Symbolic_b_block_DIAGONAL(self):
+        s, idx, counts = np.unique(self.EncodedMonomialToRow(len(self.data_flat)), return_index=True, return_counts=True)
+        pre_numeric_b = np.array(self.data_flat)
+        numeric_b = pre_numeric_b.copy()
+        pre_symbolic_b = np.array(['P(' + ''.join([''.join(str(i)) for i in idx]) + ')' for idx in
+                       np.ndindex(tuple(np.full(self.observed_count, self.cardinality, np.uint8)))])
+        symbolic_b = pre_symbolic_b.copy()
+        for i in range(1, self.inflation_order):
+            numeric_b = np.kron(pre_numeric_b, numeric_b)
+            symbolic_b = [s1+s2 for s1 in pre_symbolic_b for s2 in symbolic_b]
+        numeric_b_block = np.multiply(numeric_b.take(idx), counts)
+        string_multipliers = ('' if i == 1 else str(i)+'*' for i in counts)
+        symbolic_b_block = [s1+s2 for s1,s2 in zip(string_multipliers, np.take(symbolic_b,idx))]
+        return numeric_b_block, symbolic_b_block
+    
+    def Numeric_and_Symbolic_b_block_NON_AI_EXPR(self):
+        latent_count = len(self.names) - self.observed_count
+        names = self.names[latent_count:]
+        all_original_indices = np.arange(self.observed_count)
+        Y = list(self.extra_expressible_sets[0])
+        X = list(self.extra_expressible_sets[1])
+        Z = list(self.extra_expressible_sets[2])
+        # It is critical to pass the same ORDER of variables to GenerateEncodingColumnToMonomial and to Find_B_block
+        # In order for names to make sense, I am electing to pass a SORTED version of the flat set.
+        YXZ = sorted(Y + X + Z)  #see InflateOneExpressibleSet in graphs.py
+        lenY = len(Y)
+        lenX = len(X)
+        lenZ = len(Z)
+        lenYXZ = len(YXZ)
+    
+        np.seterr(divide='ignore')
+        marginal_on_XY = np.einsum(self.data_reshaped, all_original_indices, X + Y)
+        marginal_on_XZ = np.einsum(self.data_reshaped, all_original_indices, X + Z)
+        marginal_on_X = np.einsum(marginal_on_XY, X + Y, X)
+        # Y_conditional_on_X = np.einsum(marginal_on_XY, X + Y,
+        #                             1 / marginal_on_X, X,
+        #                             Y + X)
+        # numeric_b_block = np.einsum(marginal_on_XZ, X + Z,
+        #                             Y_conditional_on_X, Y + X,
+        #                             YXZ).ravel()
+        numeric_b_block = np.einsum(marginal_on_XY, X + Y,
+                                    marginal_on_XZ, X + Z,
+                                    np.divide(1.0, marginal_on_X), X,
+                                    YXZ).ravel()
+        numeric_b_block[np.isnan(numeric_b_block)] = 0 #Conditioning on zero probability events
+        np.seterr(divide='warn')
+    
+        lowY = np.arange(lenY).tolist()
+        lowX = np.arange(lenY, lenY + lenX).tolist()
+        lowZ = np.arange(lenY + lenX, lenY + lenX + lenZ).tolist()
+        newshape = tuple(np.full(lenYXZ, self.cardinality, np.uint8))
+        # symbolic_b_block = [
+        #     'P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX + lowY))).tolist()) + '](' +
+        #     ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX + lowY))]) + ')' +
+        #     'P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX + lowZ))).tolist()) + '](' +
+        #     ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX + lowZ))]) + ')' +
+        #     '/P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX))).tolist()) + '](' +
+        #     ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX))]) + ')'
+        #     for idYXZ in np.ndindex(newshape)]
+        symbolic_b_block = [
+            'P[' + ''.join(np.take(names, np.take(YXZ, lowY)).tolist()) + '|' +
+            ''.join(np.take(names, np.take(YXZ, lowX)).tolist()) + '](' +
+            ''.join([''.join(str(i)) for i in np.take(idYXZ, lowY)]) + '|' +
+            ''.join([''.join(str(i)) for i in np.take(idYXZ, lowX)]) + ')' +
+            'P[' + ''.join(np.take(names, np.take(YXZ, lowZ)).tolist()) + '|' +
+            ''.join(np.take(names, np.take(YXZ, lowX)).tolist()) + '](' +
+            ''.join([''.join(str(i)) for i in np.take(idYXZ, lowZ)]) + '|' +
+            ''.join([''.join(str(i)) for i in np.take(idYXZ, lowX)]) + ')' +
+            'P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX))).tolist()) + '](' +
+            ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX))]) + ')'
+            for idYXZ in np.ndindex(newshape)]
+    
+        return numeric_b_block, symbolic_b_block
+    
+    def numeric_and_symbolic_b(self,extra_expressible=False):
+        if not extra_expressible:
+            return self.Numeric_and_Symbolic_b_block_DIAGONAL
+        else:
+            numeric_b, symbolic_b = self.Numeric_and_Symbolic_b_block_DIAGONAL
+            other_expressible_sets_original = [
+                tuple(map(lambda orig_node_indices: np.array(orig_node_indices) - self.latent_count,
+                          e_set[:-1])) for e_set in self.extra_expressible_sets]
+            #How should we compute the marginal probability?
+            #Given P(ABC) how do we obtain P(AB)P(BC)/P(B) as a vector of appropriate length?
+            for eset in other_expressible_sets_original:
+                #print(tuple(np.take(obs_names, indices).tolist() for indices in eset))
+                numeric_b_block, symbolic_b_block = self.Numeric_and_Symbolic_b_block_NON_AI_EXPR
+                numeric_b.resize(len(numeric_b) + len(numeric_b_block))
+                numeric_b[-len(numeric_b_block):] = numeric_b_block
+                symbolic_b.extend(symbolic_b_block)
+            return numeric_b, symbolic_b
+   
+class InflationLP(InflationProblem):
+    
+    def __init__(self, rawgraph, rawdata, card, inflation_order,solver):
+        
+        InflationProblem.__init__(self,rawgraph, rawdata, card, inflation_order)
+        
+    
+   #The following is commented out for the later application of mixed cardinality
     #def MarkInvalidStrategies(self,cards, num_var, det_assumptions):
      #   ColumnIntegers = GenShapedColumnIntegers(self.cardinalities_tuple)
       #  for detrule in det_assumptions:
