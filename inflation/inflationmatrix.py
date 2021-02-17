@@ -102,7 +102,7 @@ def EncodeA(obs_count, num_vars, valid_column_orbits, expr_set, inflation_order,
     return result
 
 def EncodeA_ExtraExpressible(obs_count, num_vars, valid_column_orbits, expr_set, inflated_expressible_sets, inflation_order, card):
-    ######WORK IN PROGRESS, READY FOR BETA TESTING######
+
     original_product_cardinality = card ** obs_count
     row_blocks_count=len(inflated_expressible_sets)+1
     results = np.empty(np.hstack((row_blocks_count,valid_column_orbits.shape)), np.uint32)
@@ -292,7 +292,6 @@ def Numeric_and_Symbolic_b_block_NON_AI_EXPR(data, other_expressible_set_origina
     return numeric_b_block, symbolic_b_block
 
 def NumericalAndSymbolicVectorsFromGraph(g, data, inflation_order, card, extra_expressible=False):
-    ###WORK IN PROGRESS; still only returns b-vector associated with the diagonal expressible set.###
     if not extra_expressible:
         names, parents_of, roots_of = LearnOriginalGraphParameters(g, hasty=True)
         obs_count = len(list(filter(None, parents_of)))

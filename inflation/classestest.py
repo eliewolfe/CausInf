@@ -5,7 +5,10 @@ Learning a little bit about the inflation graph from the original graph
 """
 from __future__ import absolute_import
 import numpy as np
+from scipy.sparse import csr_matrix, coo_matrix
 from itertools import combinations, chain, permutations
+import json
+from collections import defaultdict
 from sys import hexversion
 if hexversion >= 0x3080000:
     from functools import cached_property
@@ -20,6 +23,10 @@ if __name__ == '__main__':
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from inflation.dimino import dimino_wolfe
 from inflation.utilities import MoveToFront,GenShapedColumnIntegers, PositionIndex, MoveToBack, SparseMatrixFromRowsPerColumn
+from inflation.moseklp import InfeasibilityCertificate
+from inflation.mosekinfeas import InfeasibilityCertificateAUTO
+from inflation.inflationlp import InflationLP
+
 
 def ToRootLexicographicOrdering(g):
     """
@@ -664,11 +671,125 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
    
 class InflationLP(InflationProblem):
     
-    def __init__(self, rawgraph, rawdata, card, inflation_order,solver):
+    def __init__(self, rawgraph, rawdata, card, inflation_order,extra_ex,solver):
         
         InflationProblem.__init__(self,rawgraph, rawdata, card, inflation_order)
         
+        self.numeric_b, self.symbolic_b=self.numeric_and_symbolic_b(extra_expressible=extra_ex)
+        self.InfMat=self.InflationMatrix(self, extra_expressible=extra_ex)
+        assert isinstance(solver, ('moseklp', 'CVXOPT')), "The accepted solvers are: 'moseklp' and 'CVXOPT'"
+        
+        if solver == 'moseklp':
+            
+            self.solve=InfeasibilityCertificate(self.InfMat, self.numeric_b)
+            
+        elif solver == 'CVXOPT':
+            
+            self.solve=InflationLP(self.InfMat, self.numeric_b)
+        
+        self.tol=self.solve['gap']/10 #TODO: Choose better tolerance function. This is yielding false incompatibility claims.
+        self.yRaw=np.array(self.solve['x']).ravel()
+        
+    def WitnessDataTest(self,y):
+        IncompTest = (np.amin(y) < 0) and (np.dot(y, self.numeric_b) < self.tol)
+        if IncompTest:
+            print('Distribution Compatibility Status: INCOMPATIBLE')
+        else:
+            print('Distribution Compatibility Status: COMPATIBLE')
+        return IncompTest
+
+    def ValidityCheck(y, SpMatrix):
+        # Smatrix=SpMatrix.toarray()    #DO NOT LEAVE SPARSITY!!
+        checkY = csr_matrix(y.ravel()) * SpMatrix
+        return checkY.min() >= 0
+
+    def IntelligentRound(self,y, SpMatrix):
+        scale = np.abs(np.amin(y))
+        n = 1
+        y2 = np.rint(n * y / scale).astype(np.int)  # Can I do this with sparse y?
+        while not self.ValidityCheck(y, SpMatrix):
+            n = n * (n + 1)
+            y2 = np.rint(n * y / scale).astype(np.int)
+        return y2
     
+    def Inequality(self):
+        #Modified Feb 2, 2021 to pass B_symbolic as an argument for Inequality
+        if self.WitnessDataTest(self.yRaw):
+            y = self.IntelligentRound(self.yRaw, self.InfMat)
+            # print('Now to make things human readable...')
+            indextally = defaultdict(list)
+            [indextally[str(val)].append(i) for i, val in enumerate(y) if val != 0]
+    
+            symboltally = defaultdict(list)
+            for i, vals in indextally.items():
+                symboltally[i] = np.take(self.symbolic_b,vals).tolist()
+    
+            #final_ineq_WITHOUT_ZEROS = np.multiply(y[np.nonzero(y)], sy.symbols(np.take(B_symbolic,np.nonzero(y))))
+            #Inequality_as_string = '0≤' + "+".join([str(term) for term in final_ineq_WITHOUT_ZEROS]).replace('*P', 'P')
+            #Inequality_as_string = Inequality_as_string.replace('+-', '-')
+    
+            print("Writing to file: 'inequality_output.json'")
+    
+            returntouser = {
+                #'Order of variables': names,
+                'Raw rolver output': self.yRaw.tolist(),
+                #'Inequality as string': Inequality_as_string,
+                'Coefficients grouped by index': indextally,
+                'Coefficients grouped by symbol': symboltally,
+                # 'b_vector_position': idx.tolist(),
+                'Clean solver output': y.tolist()#,
+                #'Symbolic association': symbtostring.tolist()
+            }
+            f = open('inequality_output.json', 'w')
+            print(json.dumps(returntouser), file=f)
+            f.close()
+            return returntouser
+        else:
+            return print('Compatibility Error: The input distribution is compatible with given inflation order test.')       
+
+class SupportCertificate(InflationProblem):
+    
+    def __init__(self,rawgraph,rawdata,card,inflation_order,extra_ex):
+        
+        InfMat=self.InflationMatrix(self, extra_expressible=extra_ex)
+        numeric_b, symbolic_b=self.numeric_and_symbolic_b(extra_expressible=extra_ex)
+        
+        Rows=InfMat.row
+        Cols=InfMat.col
+        
+        ForbiddenRowIdx=np.where(numeric_b[Rows] == 0)[0]
+        ForbiddenColumnIdx=np.unique(Cols[ForbiddenRowIdx])
+        
+        ColumnTemp=np.ones(Cols.max()+1)
+        ColumnTemp[ForbiddenColumnIdx]=0
+        
+        ForbiddenColsZeroMarked=ColumnTemp[Cols]
+        
+        IdxToRemove=np.where(ForbiddenColsZeroMarked == 0)[0]
+        
+        NewRows=np.delete(Rows,IdxToRemove)
+        NewCols=np.delete(Cols,IdxToRemove)
+        NewData=np.ones(len(NewCols),dtype=np.uint)
+        
+        NewMatrix=coo_matrix((NewData, (NewRows, NewCols)))
+        
+        NonzeroRows=np.nonzero(numeric_b)[0]
+        self.Check=True
+        
+        for r in NonzeroRows:
+            if self.Check:
+                
+                self.Check=NewMatrix.getrow(r).toarray().any()
+    
+        if self.Check:
+            
+            print("Supported")
+        
+        else:
+            
+            print("Not Supported")
+
+
    #The following is commented out for the later application of mixed cardinality
     #def MarkInvalidStrategies(self,cards, num_var, det_assumptions):
      #   ColumnIntegers = GenShapedColumnIntegers(self.cardinalities_tuple)
