@@ -407,13 +407,13 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
         self.cardinality = self.cardinalities_array[0] #To be deprecated on upgrade to mixed cardinality
 
         self.original_cardinalities_array = self.cardinalities_array
-        self.original_cardinalities_tuples = self.cardinalities_tuple
+        self.original_cardinalities_tuple = self.cardinalities_tuple
         self.original_size = self.size
 
         self.inflated_cardinalities_array = np.repeat(self.inflation_copies, self.original_cardinalities_array)
-        self.inflated_cardinalities_tuples = tuple(self.inflated_cardinalities_array.tolist())
+        self.inflated_cardinalities_tuple = tuple(self.inflated_cardinalities_array.tolist())
         self.column_count = self.inflated_cardinalities_array.prod()
-        self.shaped_column_integers = np.arange(self.column_count).reshape(self.inflated_cardinalities_tuples)
+        self.shaped_column_integers = np.arange(self.column_count).reshape(self.inflated_cardinalities_tuple)
 
     @cached_property
     def shaped_column_integers_marked(self):
@@ -430,7 +430,7 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
                 for j in np.arange(child_cardinality - 1):
                     for k in np.arange(j + 1, child_cardinality):
                         column_integers_marked[i, i, j, k] = -1
-            column_integers_marked = column_integers_marked.reshape(self.inflated_cardinalities_tuples ).transpose(tuple(inversetranspose))
+            column_integers_marked = column_integers_marked.reshape(self.inflated_cardinalities_tuple).transpose(tuple(inversetranspose))
         return column_integers_marked
 
 
@@ -592,7 +592,7 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
         pre_numeric_b = np.array(self.data_flat)
         numeric_b = pre_numeric_b.copy()
         pre_symbolic_b = np.array(['P(' + ''.join([''.join(str(i)) for i in idx]) + ')' for idx in
-                       np.ndindex(tuple(np.full(self.observed_count, self.cardinality, np.uint8)))])
+                       np.ndindex(self.inflated_cardinalities_tuple)])
         symbolic_b = pre_symbolic_b.copy()
         for i in range(1, self.inflation_order):
             numeric_b = np.kron(pre_numeric_b, numeric_b)
@@ -637,7 +637,9 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
         lowY = np.arange(lenY).tolist()
         lowX = np.arange(lenY, lenY + lenX).tolist()
         lowZ = np.arange(lenY + lenX, lenY + lenX + lenZ).tolist()
-        newshape = tuple(np.full(lenYXZ, self.cardinality, np.uint8))
+
+        newshape = tuple(self.inflated_cardinalities_array.take(YXZ))
+        #newshape = tuple(np.full(lenYXZ, self.cardinality, np.uint8))
         # symbolic_b_block = [
         #     'P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX + lowY))).tolist()) + '](' +
         #     ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX + lowY))]) + ')' +

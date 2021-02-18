@@ -16,7 +16,7 @@ def streamprinter(text):
     sys.stdout.flush()
 
 
-def InfeasibilityCertificateAUTO(A, b, refine_subproblem=True):
+def InfeasibilityCertificateAUTO(A, b, refine_subproblem=False):
     with mosek.Env() as env:
         env.set_Stream(mosek.streamtype.log, streamprinter)
         (numcon, numvar) = A.shape
@@ -74,13 +74,12 @@ def InfeasibilityCertificateAUTO(A, b, refine_subproblem=True):
             task.putobjsense(mosek.objsense.maximize)
             task.putintparam(mosek.iparam.bi_clean_optimizer, mosek.optimizertype.primal_simplex)
             task.putintparam(mosek.iparam.presolve_use, mosek.presolvemode.on)
-            task.putintparam(mosek.iparam.presolve_use, mosek.presolvemode.on)
             task.putintparam(mosek.iparam.presolve_lindep_use, mosek.onoffkey.on)
             task.putintparam(mosek.iparam.presolve_max_num_reductions, -1)
             task.putintparam(mosek.iparam.optimizer, mosek.optimizertype.intpnt)
             # task.putintparam(mosek.iparam.optimizer, mosek.optimizertype.dual_simplex)
             task.putintparam(mosek.iparam.sim_max_iterations, 10000)
-            task.putintparam(mosek.iparam.intpnt_basis, mosek.basindtype.never)
+            # task.putintparam(mosek.iparam.intpnt_basis, mosek.basindtype.never)
             task.putintparam(mosek.iparam.infeas_report_auto, mosek.onoffkey.off)
             task.putintparam(mosek.iparam.infeas_report_level, 0)
             # task.putdouparam(mosek.dparam.intpnt_tol_pfeas, 1.0e-12)
