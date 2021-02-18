@@ -22,7 +22,7 @@ if __name__ == '__main__':
     import pathlib
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from inflation.dimino import dimino_wolfe
-from inflation.utilities import MoveToFront,GenShapedColumnIntegers, PositionIndex, MoveToBack, SparseMatrixFromRowsPerColumn
+from inflation.utilities import MoveToFront, PositionIndex, MoveToBack, SparseMatrixFromRowsPerColumn
 from inflation.moseklp import InfeasibilityCertificate
 from inflation.mosekinfeas import InfeasibilityCertificateAUTO
 from inflation.inflationlp import InflationLP
