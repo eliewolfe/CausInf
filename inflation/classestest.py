@@ -223,10 +223,11 @@ class InflatedGraph(LatentVariableGraph):
         #self.obs_count=LatentVariableGraph(g).observed_count
         #self.latent_count = len(LatentVariableGraph(g).parents_of) - self.obs_count
         self.root_structure = self.roots_of[self.latent_count:]
-        self.inflation_depths = np.array(list(map(len, self.root_structure)))
-        self.inflationcopies = self.inflation_order ** self.inflation_depths
-        self.inflated_observed_count = self.inflationcopies.sum()
-        accumulated = np.add.accumulate(inflation_order ** self.inflation_depths)
+        self.inflation_depths = np.array(list(map(len, self.root_structure))) #Counts how many roots each random variable has. Should be deprecated upon upgrading to mixed inflation order.
+        self.inflation_copies = self.inflation_order ** self.inflation_depths #Counts how many times each random variable is copied.
+        #self.inflated_observed_count = self.inflation_copies.sum()
+        accumulated = np.add.accumulate(self.inflation_copies)
+        self.inflated_observed_count = accumulated[-1]
         self.offsets = np.hstack(([0], accumulated[:-1]))
 
     @cached_property
@@ -241,7 +242,7 @@ class InflatedGraph(LatentVariableGraph):
 
     @cached_property
     def inflation_group_generators(self):
-        globalstrategyflat = list(np.add(*stuff) for stuff in zip(list(map(np.arange, self.inflationcopies.tolist())), self.offsets))
+        globalstrategyflat = list(np.add(*stuff) for stuff in zip(list(map(np.arange, self.inflation_copies.tolist())), self.offsets))
         reshapings = np.ones((self.observed_count, self.latent_count), np.uint8)
         contractings = np.zeros((self.observed_count, self.latent_count), np.object)
         for idx, elem in enumerate(self.root_structure):
@@ -400,38 +401,47 @@ class ObservationalData:
 class InflationProblem(LatentVariableGraph,ObservationalData):
     
     def __init__(self,rawgraph,rawdata,card,inflation_order):
-         InflatedGraph.__init__(self, rawgraph,inflation_order)
-         ObservationalData.__init__(self,rawdata,card)
-         assert isinstance(self.cardinalities_array, all(i == list(self.cardinalities_array)[0] for i in list(card))), 'This class does not support mixed cardinalities yet.'
-         self.cardinality=self.cardinalities_array[0]
-    
-    def MarkedInvalidStrategies(self):
-        initialshape = self.cardinalities_tuple 
-        ColumnIntegers = GenShapedColumnIntegers(tuple(initialshape))
+        InflatedGraph.__init__(self, rawgraph,inflation_order)
+        ObservationalData.__init__(self,rawdata,card)
+        assert isinstance(self.cardinalities_array, all(i == list(self.cardinalities_array)[0] for i in list(card))), 'This class does not support mixed cardinalities yet.'
+        self.cardinality = self.cardinalities_array[0] #To be deprecated on upgrade to mixed cardinality
+
+        self.original_cardinalities_array = self.cardinalities_array
+        self.original_cardinalities_tuples = self.cardinalities_tuple
+        self.original_size = self.size
+
+        self.inflated_cardinalities_array = np.repeat(self.inflation_copies, self.original_cardinalities_array)
+        self.inflated_cardinalities_tuples = tuple(self.inflated_cardinalities_array.tolist())
+        self.column_count = self.inflated_cardinalities_array.prod()
+        self.shaped_column_integers = np.arange(self.column_count).reshape(self.inflated_cardinalities_tuples)
+
+    @cached_property
+    def shaped_column_integers_marked(self):
+        column_integers_marked = self.shaped_column_integers.copy()
         for detrule in self.inflated_determinism_checks:
+            #det rule comes as a list with four elements
             initialtranspose = MoveToFront(self.inflated_observed_count, np.hstack(tuple(detrule)))
             inversetranspose = np.argsort(initialtranspose)
-            parentsdimension = self.cardinality ** len(detrule[1])
-            intermediateshape = (parentsdimension, parentsdimension, self.cardinality , self.cardinality , -1);
-            ColumnIntegers = ColumnIntegers.transpose(tuple(initialtranspose)).reshape(intermediateshape)
-            for i in np.arange(parentsdimension):
-                for j in np.arange(self.cardinality  - 1):
-                    for k in np.arange(j + 1, self.cardinality ):
-                        ColumnIntegers[i, i, j, k] = -1
-            ColumnIntegers = ColumnIntegers.reshape(initialshape).transpose(tuple(inversetranspose))
-        return ColumnIntegers
+            parents_card_product = self.inflated_cardinalities_array.take(detrule[1]).prod()
+            child_cardinality = np.atleast_1d(self.inflated_cardinalities_array.take(detrule[-1])).prod()
+            intermediateshape = (parents_card_product, parents_card_product, child_cardinality , child_cardinality , -1);
+            column_integers_marked = column_integers_marked.transpose(tuple(initialtranspose)).reshape(intermediateshape)
+            for i in np.arange(parents_card_product):
+                for j in np.arange(child_cardinality - 1):
+                    for k in np.arange(j + 1, child_cardinality):
+                        column_integers_marked[i, i, j, k] = -1
+            column_integers_marked = column_integers_marked.reshape(self.inflated_cardinalities_tuples ).transpose(tuple(inversetranspose))
+        return column_integers_marked
 
 
     def ValidColumnOrbits(self):
-        ColumnIntegers = self.MarkInvalidStrategies
         group_order = len(self.inflation_group_elements)
-        AMatrix = np.empty([group_order, self.cardinality ** self.inflated_observed_count], np.int32)
-        AMatrix[0] = ColumnIntegers.flat  # Assuming first group element is the identity
+        AMatrix = np.empty([group_order, self.column_count], np.int)
+        AMatrix[0] = self.shaped_column_integers_marked.flat  # Assuming first group element is the identity
         for i in np.arange(1, group_order):
-            AMatrix[i] = np.transpose(ColumnIntegers, self.inflation_group_elements[i]).flat
+            AMatrix[i] = np.transpose(self.shaped_column_integers_marked, self.inflation_group_elements[i]).flat
         minima = np.amin(AMatrix, axis=0)
         AMatrix = np.compress(minima == np.abs(AMatrix[0]), AMatrix, axis=1)
-        # print(AMatrix.shape)
         return AMatrix
 
     def EncodedMonomialToRow(self, product):  # Cached in memory, as this function is called by both inflation matrix and inflation vector construction.    
@@ -492,13 +502,13 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
             MonomialIntegersPermutations, axis=0))
  
     def EncodedColumnToMonomial(self,expr_set):
-        #Can be used for off-diagonal expressible sets with no adjustment!
-        initialshape = np.full(self.inflated_observed_count, self.cardinality, np.uint)
-        ColumnIntegers = GenShapedColumnIntegers(tuple(initialshape))
-        ColumnIntegers = ColumnIntegers.transpose(MoveToBack(self.inflated_observed_count, np.array(expr_set))).reshape(
-            (-1, self.cardinality ** len(expr_set)))
-        EncodingColumnToMonomial = np.empty(self.cardinality ** self.inflated_observed_count, np.uint32)
-        EncodingColumnToMonomial[ColumnIntegers] = np.arange(self.cardinality ** len(expr_set))
+        # Can be used for off-diagonal expressible sets with no adjustment!
+        expr_set_size = self.inflated_cardinalities_array.take(expr_set).prod()
+
+        ColumnIntegers = self.shaped_column_integers.transpose(MoveToBack(self.inflated_observed_count, np.array(expr_set))).reshape(
+            (-1, expr_set_size))
+        EncodingColumnToMonomial = np.empty(self.column_count, np.int)
+        EncodingColumnToMonomial[ColumnIntegers] = np.arange(expr_set_size)
         return EncodingColumnToMonomial
     
     def EncodedA(self):
