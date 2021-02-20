@@ -26,6 +26,7 @@ from inflation.utilities import MoveToFront, PositionIndex, MoveToBack, SparseMa
 from inflation.moseklp import InfeasibilityCertificate
 from inflation.mosekinfeas import InfeasibilityCertificateAUTO
 from inflation.inflationlp import InflationLP
+import sympy as sy
 
 
 def ToRootLexicographicOrdering(g):
@@ -344,7 +345,7 @@ class ObservationalData:
             if isinstance(cardinality, int): #When cardinality is specified as an integer
                 self.observed_count = len(rawdata[0])
                 self.original_card_product= cardinality ** self.observed_count               
-                data = np.zeros(self.original_card_product ** self.observed_count)
+                data = np.zeros(self.original_card_product)
                 data[list(map(lambda s: int(s,cardinality),rawdata))] = 1/numevents
                 self.data_flat=data
                 self.size = self.data_flat.size
@@ -353,7 +354,7 @@ class ObservationalData:
                 assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
                 self.observed_count = len(rawdata[0])
                 self.original_card_product=np.prod(cardinality)
-                data = np.zeros(self.original_card_product ** self.observed_count)
+                data = np.zeros(self.original_card_product)
                 data[list(map(lambda s: MixedCardinalityBaseConversion(cardinality, s),rawdata))] = 1/numevents
                 self.data_flat=data
                 self.size = self.data_flat.size
@@ -398,19 +399,26 @@ class ObservationalData:
         self.cardinalities_tuple = tuple(self.cardinalities_array.tolist())
         self.data_reshaped = np.reshape(self.data_flat,self.cardinalities_tuple)
 
-class InflationProblem(LatentVariableGraph,ObservationalData):
+class InflationProblem(InflatedGraph,ObservationalData):
     
     def __init__(self,rawgraph,rawdata,card,inflation_order):
         InflatedGraph.__init__(self, rawgraph,inflation_order)
         ObservationalData.__init__(self,rawdata,card)
-        assert isinstance(self.cardinalities_array, all(i == list(self.cardinalities_array)[0] for i in list(card))), 'This class does not support mixed cardinalities yet.'
+        
+        """
+        self.inflated_offdiagonal_expressible_sets=InflatedGraph(rawgraph,inflation_order).inflated_offdiagonal_expressible_sets
+        self.inflation_group_elements=InflatedGraph(rawgraph,inflation_order).inflation_group_elements
+        self.inflated_determinism_checks=InflatedGraph(rawgraph,inflation_order).inflated_determinism_checks
+        self.diagonal_expressible_set=
+        """
+        
         self.cardinality = self.cardinalities_array[0] #To be deprecated on upgrade to mixed cardinality
 
         self.original_cardinalities_array = self.cardinalities_array
         self.original_cardinalities_tuple = self.cardinalities_tuple
         self.original_size = self.size
 
-        self.inflated_cardinalities_array = np.repeat(self.inflation_copies, self.original_cardinalities_array)
+        self.inflated_cardinalities_array = np.repeat(self.original_cardinalities_array,self.inflation_copies)
         self.inflated_cardinalities_tuple = tuple(self.inflated_cardinalities_array.tolist())
         self.column_count = self.inflated_cardinalities_array.prod()
         self.shaped_column_integers = np.arange(self.column_count).reshape(self.inflated_cardinalities_tuple)
@@ -433,7 +441,7 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
             column_integers_marked = column_integers_marked.reshape(self.inflated_cardinalities_tuple).transpose(tuple(inversetranspose))
         return column_integers_marked
 
-
+    @cached_property
     def ValidColumnOrbits(self):
         group_order = len(self.inflation_group_elements)
         AMatrix = np.empty([group_order, self.column_count], np.int)
@@ -518,7 +526,7 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
         return result
     
     def EncodedA_ExtraExpressible(self):
-
+        
         row_blocks_count=len(self.inflated_offdiagonal_expressible_sets)+1
         results = np.empty(np.hstack((row_blocks_count,self.ValidColumnOrbits.shape)), np.uint32)
         results[0] = self.EncodedMonomialToRow(self.original_card_product).take(self.EncodedColumnToMonomial(self.diagonal_expressible_set)).take(self.ValidColumnOrbits)
@@ -532,7 +540,7 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
         #result.sort(axis=0)  # in-place sort
         return np.hstack(results+offsets[:, np.newaxis, np.newaxis])
     
-    def InflationMatrix(self, extra_expressible=False):
+    def InflationMatrix(self, extra_expressible=True):
         """
         Parameters
         ----------
@@ -583,16 +591,16 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
         """
         
         if extra_expressible:
-            return SparseMatrixFromRowsPerColumn(self.EncodedA_ExtraExpressible)
+            return SparseMatrixFromRowsPerColumn(self.EncodedA_ExtraExpressible())
         else:
-            return SparseMatrixFromRowsPerColumn(self.EncodedA)
+            return SparseMatrixFromRowsPerColumn(self.EncodedA())
     
     def Numeric_and_Symbolic_b_block_DIAGONAL(self):
         s, idx, counts = np.unique(self.EncodedMonomialToRow(len(self.data_flat)), return_index=True, return_counts=True)
         pre_numeric_b = np.array(self.data_flat)
         numeric_b = pre_numeric_b.copy()
         pre_symbolic_b = np.array(['P(' + ''.join([''.join(str(i)) for i in idx]) + ')' for idx in
-                       np.ndindex(self.inflated_cardinalities_tuple)])
+                       np.ndindex(self.original_cardinalities_tuple)])
         symbolic_b = pre_symbolic_b.copy()
         for i in range(1, self.inflation_order):
             numeric_b = np.kron(pre_numeric_b, numeric_b)
@@ -602,13 +610,12 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
         symbolic_b_block = [s1+s2 for s1,s2 in zip(string_multipliers, np.take(symbolic_b,idx))]
         return numeric_b_block, symbolic_b_block
     
-    def Numeric_and_Symbolic_b_block_NON_AI_EXPR(self):
-        latent_count = len(self.names) - self.observed_count
-        names = self.names[latent_count:]
+    def Numeric_and_Symbolic_b_block_NON_AI_EXPR(self,eset):
+        names = self.names[self.latent_count:]
         all_original_indices = np.arange(self.observed_count)
-        Y = list(self.extra_expressible_sets[0])
-        X = list(self.extra_expressible_sets[1])
-        Z = list(self.extra_expressible_sets[2])
+        Y = list(eset[0])
+        X = list(eset[1])
+        Z = list(eset[2])
         # It is critical to pass the same ORDER of variables to GenerateEncodingColumnToMonomial and to Find_B_block
         # In order for names to make sense, I am electing to pass a SORTED version of the flat set.
         YXZ = sorted(Y + X + Z)  #see InflateOneExpressibleSet in graphs.py
@@ -618,6 +625,7 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
         lenYXZ = len(YXZ)
     
         np.seterr(divide='ignore')
+
         marginal_on_XY = np.einsum(self.data_reshaped, all_original_indices, X + Y)
         marginal_on_XZ = np.einsum(self.data_reshaped, all_original_indices, X + Z)
         marginal_on_X = np.einsum(marginal_on_XY, X + Y, X)
@@ -663,19 +671,19 @@ class InflationProblem(LatentVariableGraph,ObservationalData):
     
         return numeric_b_block, symbolic_b_block
     
-    def numeric_and_symbolic_b(self,extra_expressible=False):
+    def numeric_and_symbolic_b(self,extra_expressible=True):
         if not extra_expressible:
-            return self.Numeric_and_Symbolic_b_block_DIAGONAL
+            return self.Numeric_and_Symbolic_b_block_DIAGONAL()
         else:
-            numeric_b, symbolic_b = self.Numeric_and_Symbolic_b_block_DIAGONAL
-            other_expressible_sets_original = [
-                tuple(map(lambda orig_node_indices: np.array(orig_node_indices) - self.latent_count,
-                          e_set[:-1])) for e_set in self.extra_expressible_sets]
+            numeric_b, symbolic_b = self.Numeric_and_Symbolic_b_block_DIAGONAL()
             #How should we compute the marginal probability?
             #Given P(ABC) how do we obtain P(AB)P(BC)/P(B) as a vector of appropriate length?
-            for eset in other_expressible_sets_original:
+            
+            original_extra_ex=[tuple(map(lambda orig_node_indices: np.array(orig_node_indices) - self.latent_count,e_set[:-1])) for e_set in self.extra_expressible_sets]
+                      
+            for eset in original_extra_ex:
                 #print(tuple(np.take(obs_names, indices).tolist() for indices in eset))
-                numeric_b_block, symbolic_b_block = self.Numeric_and_Symbolic_b_block_NON_AI_EXPR
+                numeric_b_block, symbolic_b_block = self.Numeric_and_Symbolic_b_block_NON_AI_EXPR(eset)
                 numeric_b.resize(len(numeric_b) + len(numeric_b_block))
                 numeric_b[-len(numeric_b_block):] = numeric_b_block
                 symbolic_b.extend(symbolic_b_block)
@@ -688,8 +696,9 @@ class InflationLP(InflationProblem):
         InflationProblem.__init__(self,rawgraph, rawdata, card, inflation_order)
         
         self.numeric_b, self.symbolic_b=self.numeric_and_symbolic_b(extra_expressible=extra_ex)
-        self.InfMat=self.InflationMatrix(self, extra_expressible=extra_ex)
-        assert isinstance(solver, ('moseklp', 'CVXOPT')), "The accepted solvers are: 'moseklp' and 'CVXOPT'"
+        self.InfMat=self.InflationMatrix(extra_expressible=extra_ex)
+        
+        assert (solver == 'moseklp') or (solver == 'CVXOPT')  , "The accepted solvers are: 'moseklp' and 'CVXOPT'"
         
         if solver == 'moseklp':
             
@@ -710,18 +719,26 @@ class InflationLP(InflationProblem):
             print('Distribution Compatibility Status: COMPATIBLE')
         return IncompTest
 
-    def ValidityCheck(y, SpMatrix):
+    def ValidityCheck(self,y, SpMatrix):
         # Smatrix=SpMatrix.toarray()    #DO NOT LEAVE SPARSITY!!
-        checkY = csr_matrix(y.ravel()) * SpMatrix
-        return checkY.min() >= 0
+        checkY = csr_matrix(y.ravel()).dot(SpMatrix)
+        print(checkY.min())
+        return checkY.min() >= -10**(-5)
 
     def IntelligentRound(self,y, SpMatrix):
         scale = np.abs(np.amin(y))
         n = 1
+        #yt=np.rint(y*n)
+        #yt=yt/n
         y2 = np.rint(n * y / scale).astype(np.int)  # Can I do this with sparse y?
-        while not self.ValidityCheck(y, SpMatrix):
-            n = n * (n + 1)
-            y2 = np.rint(n * y / scale).astype(np.int)
+        while not self.ValidityCheck(y2, SpMatrix):
+            n =n*10
+            #yt=np.rint(y*n)
+            #yt=yt/n
+            #y2 = np.rint(n * yt / scale).astype(np.int)
+            if n > 10**6:
+                y2=y
+        #yt=np.rint(yt*100)
         return y2
     
     def Inequality(self):
@@ -731,21 +748,22 @@ class InflationLP(InflationProblem):
             # print('Now to make things human readable...')
             indextally = defaultdict(list)
             [indextally[str(val)].append(i) for i, val in enumerate(y) if val != 0]
-    
             symboltally = defaultdict(list)
             for i, vals in indextally.items():
                 symboltally[i] = np.take(self.symbolic_b,vals).tolist()
     
-            #final_ineq_WITHOUT_ZEROS = np.multiply(y[np.nonzero(y)], sy.symbols(np.take(B_symbolic,np.nonzero(y))))
-            #Inequality_as_string = '0≤' + "+".join([str(term) for term in final_ineq_WITHOUT_ZEROS]).replace('*P', 'P')
-            #Inequality_as_string = Inequality_as_string.replace('+-', '-')
+            final_ineq_WITHOUT_ZEROS = np.multiply(y[np.nonzero(y)], sy.symbols(' '.join(np.take(self.symbolic_b,np.nonzero(y))[0])))
+            
+            Inequality_as_string = '0<=' + "+".join([str(term) for term in final_ineq_WITHOUT_ZEROS]).replace('*P', 'P').replace('2P','P')
+            Inequality_as_string = Inequality_as_string.replace('+-', '-')
+
     
             print("Writing to file: 'inequality_output.json'")
     
             returntouser = {
                 #'Order of variables': names,
                 'Raw rolver output': self.yRaw.tolist(),
-                #'Inequality as string': Inequality_as_string,
+                'Inequality as string': Inequality_as_string,
                 'Coefficients grouped by index': indextally,
                 'Coefficients grouped by symbol': symboltally,
                 # 'b_vector_position': idx.tolist(),
@@ -835,6 +853,6 @@ if __name__ == '__main__':
     TriangleGraph = Graph.Formula("X->A,Y->A:B,Z->B:C,X->C")
     [
         InflatedGraph(g,2).print_assessment() for g in
-     (InstrumentalGraph, Evans14a, Evans14b, Evans14c, IceCreamGraph, BiconfoundingInstrumental)]
+     (TriangleGraph, Evans14a, Evans14b, Evans14c, IceCreamGraph, BiconfoundingInstrumental)]
 
 
