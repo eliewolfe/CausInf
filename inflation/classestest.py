@@ -698,7 +698,7 @@ class InflationLP(InflationProblem):
         self.numeric_b, self.symbolic_b=self.numeric_and_symbolic_b(extra_expressible=extra_ex)
         self.InfMat=self.InflationMatrix(extra_expressible=extra_ex)
         
-        assert (solver == 'moseklp') or (solver == 'CVXOPT')  , "The accepted solvers are: 'moseklp' and 'CVXOPT'"
+        assert (solver == 'moseklp') or (solver == 'CVXOPT') or (solver == 'mosekAUTO')  , "The accepted solvers are: 'moseklp', 'CVXOPT' and 'mosekAUTO'"
         
         if solver == 'moseklp':
             
@@ -708,6 +708,10 @@ class InflationLP(InflationProblem):
             
             self.solve=InflationLP(self.InfMat, self.numeric_b)
         
+        elif solver == 'mosekAUTO':
+            
+            self.solve=InfeasibilityCertificateAUTO(self.InfMat, self.numeric_b)
+            
         self.tol=self.solve['gap']/10 #TODO: Choose better tolerance function. This is yielding false incompatibility claims.
         self.yRaw=np.array(self.solve['x']).ravel()
         
