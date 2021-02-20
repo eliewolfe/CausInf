@@ -723,7 +723,7 @@ class InflationLP(InflationProblem):
         # Smatrix=SpMatrix.toarray()    #DO NOT LEAVE SPARSITY!!
         checkY = csr_matrix(y.ravel()).dot(SpMatrix)
         print(checkY.min())
-        return checkY.min() >= -10**(-5)
+        return checkY.min() >= -10**(-10)
 
     def IntelligentRound(self,y, SpMatrix):
         scale = np.abs(np.amin(y))
@@ -734,10 +734,12 @@ class InflationLP(InflationProblem):
         while not self.ValidityCheck(y2, SpMatrix):
             n =n*10
             #yt=np.rint(y*n)
+            #yt=yt*n
             #yt=yt/n
-            #y2 = np.rint(n * yt / scale).astype(np.int)
+            y2 = np.rint(n * y2 / scale).astype(np.int)
             if n > 10**6:
                 y2=y
+                print("RoundingError: Unable to round y")
         #yt=np.rint(yt*100)
         return y2
     
