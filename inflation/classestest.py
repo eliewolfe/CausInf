@@ -340,7 +340,23 @@ class InflatedGraph(LatentVariableGraph):
 class ObservationalData:
     def __init__(self, rawdata, cardinality):
         
-        if isinstance(rawdata[0],str):#When the input is in the form ['101','100'] for support certification purposes
+        if isinstance(rawdata, int):  # When only the number of observed variables is specified, but no actual data, we fake it.
+            if isinstance(cardinality, int): #When cardinality is specified as an integer
+                self.observed_count = rawdata
+                self.original_card_product=cardinality ** self.observed_count
+                self.data_flat = np.full(self.original_card_product,1.0/(self.original_card_product))
+                self.size = self.data_flat.size
+                self.cardinalities_array = np.full(self.observed_count, cardinality)
+            else: #When cardinalities are specified as a list
+                assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
+                self.observed_count = rawdata
+                self.original_card_product=np.prod(cardinality)
+                self.data_flat = np.full(self.original_card_product,1.0/self.original_card_product)
+                self.size = self.data_flat.size
+                assert self.observed_count ==len(cardinality), 'Cardinality specification does not match the number of observed variables.' 
+                self.cardinalities_array = np.array(cardinality)
+        
+        elif isinstance(rawdata[0],str):#When the input is in the form ['101','100'] for support certification purposes
             numevents = len(rawdata)
             if isinstance(cardinality, int): #When cardinality is specified as an integer
                 self.observed_count = len(rawdata[0])
@@ -361,22 +377,6 @@ class ObservationalData:
                 assert self.observed_count==len(cardinality), 'Cardinality specification does not match the number of observed variables.' 
                 self.cardinalities_array = np.array(cardinality)
 
-        
-        elif isinstance(rawdata, int):  # When only the number of observed variables is specified, but no actual data, we fake it.
-            if isinstance(cardinality, int): #When cardinality is specified as an integer
-                self.observed_count = rawdata
-                self.original_card_product=cardinality ** self.observed_count
-                self.data_flat = np.full(self.original_card_product,1.0/(self.original_card_product))
-                self.size = self.data_flat.size
-                self.cardinalities_array = np.full(self.observed_count, cardinality)
-            else: #When cardinalities are specified as a list
-                assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
-                self.observed_count = rawdata
-                self.original_card_product=np.prod(cardinality)
-                self.data_flat = np.full(self.original_card_product,1.0/self.original_card_product)
-                self.size = self.data_flat.size
-                assert self.observed_count ==len(cardinality), 'Cardinality specification does not match the number of observed variables.' 
-                self.cardinalities_array = np.array(cardinality)
         else:
             self.data_flat = np.array(rawdata).ravel()
             self.size = self.data_flat.size
@@ -726,25 +726,28 @@ class InflationLP(InflationProblem):
     def ValidityCheck(self,y, SpMatrix):
         # Smatrix=SpMatrix.toarray()    #DO NOT LEAVE SPARSITY!!
         checkY = csr_matrix(y.ravel()).dot(SpMatrix)
-        print(checkY.min())
-        return checkY.min() >= -10**(-10)
+        assert checkY.min() >= -10**4, 'The rounding of y has failed: checkY.min()='+str(checkY.min())+''
+        return checkY.min() >= -10**-10
 
     def IntelligentRound(self,y, SpMatrix):
         scale = np.abs(np.amin(y))
         n = 1
         #yt=np.rint(y*n)
-        #yt=yt/n
+        #yt=y*n
         y2 = np.rint(n * y / scale).astype(np.int)  # Can I do this with sparse y?
+        
         while not self.ValidityCheck(y2, SpMatrix):
-            n =n*10
+            n =n*(n+1)
             #yt=np.rint(y*n)
             #yt=yt*n
             #yt=yt/n
             y2 = np.rint(n * y2 / scale).astype(np.int)
-            if n > 10**6:
-                y2=y
-                print("RoundingError: Unable to round y")
+            #y2=y2/(n*10)
+            #if n > 10**6:
+             #   y2=y
+              #  print("RoundingError: Unable to round y")
         #yt=np.rint(yt*100)
+        
         return y2
     
     def Inequality(self):
