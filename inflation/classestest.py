@@ -221,25 +221,25 @@ class InflatedGraph(LatentVariableGraph):
     
     def __init__(self, rawgraph ,inflation_order):
         LatentVariableGraph.__init__(self, rawgraph)
-        self.inflation_order=inflation_order #To be deprecated after transition to mixed inflation order.
+        # self.inflation_order=inflation_order #Now fully deprecated after transition to mixed inflation order!
 
         if isinstance(inflation_order, int):
-            self.inflation_orders = np.full(self.latent_count,inflation_order)
+            self.inflations_orders = np.full(self.latent_count,inflation_order)
         else:  # When inflation_order is specified as a list
             assert isinstance(inflation_order, (list, tuple, np.ndarray)), 'Inflation orders not given as list of integers.'
-            self.inflation_orders = np.array(inflation_order)
-        self.min_inflation_order = self.inflation_orders.min()
+            self.inflations_orders = np.array(inflation_order)
+        self.min_inflation_order = self.inflations_orders.min()
 
-        self.determinism_checks = list(filter(lambda screening : self.inflation_orders[screening[0]] >= 2,
+        self.determinism_checks = list(filter(lambda screening : all(U >= 2 for U in self.inflations_orders[screening[0]]),
                                               self.determinism_checks))
-        self.extra_expressible_sets = list(filter(lambda screening: self.inflation_orders[screening[-1]] >= 2,
+        self.extra_expressible_sets = list(filter(lambda screening: all(U >= 2 for U in self.inflations_orders[screening[-1]]),
                                               self.extra_expressible_sets))
 
         self.root_structure = self.roots_of[self.latent_count:]
 
         self.inflation_depths = np.array(list(map(len, self.root_structure))) #Counts how many roots each random variable has. Should be deprecated upon upgrading to mixed inflation order.
-        # self.inflation_copies = self.inflation_orders ** self.inflation_depths #Counts how many times each random variable is copied.
-        self.inflation_copies = np.fromiter((self.inflation_orders.take(latent_parents).prod() for latent_parents in self.root_structure), np.int)
+        # self.inflation_copies = self.inflations_orders ** self.inflation_depths #Counts how many times each random variable is copied.
+        self.inflation_copies = np.fromiter((self.inflations_orders.take(latent_parents).prod() for latent_parents in self.root_structure), np.int)
 
         #self.inflated_observed_count = self.inflation_copies.sum()
         accumulated = np.add.accumulate(self.inflation_copies)
@@ -260,33 +260,28 @@ class InflatedGraph(LatentVariableGraph):
     def inflation_group_generators(self):
         #Upgrade to mixed inflation order IN PROGRESS (Also need to upgrade determinism and AI to check if n>2!)
         globalstrategyflat = list(np.add(*stuff) for stuff in zip(list(map(np.arange, self.inflation_copies.tolist())), self.offsets))
+        # print(globalstrategyflat)
         reshapings = np.ones((self.observed_count, self.latent_count), np.uint8)
         contractings = np.zeros((self.observed_count, self.latent_count), np.object)
         for idx, latent_ancestors in enumerate(self.root_structure):
-            # reshapings[idx][latent_ancestors] = self.inflation_order
-            reshapings[idx][latent_ancestors] = self.inflation_orders[latent_ancestors]
+            reshapings[idx][latent_ancestors] = self.inflations_orders[latent_ancestors]
             contractings[idx][latent_ancestors] = np.s_[:]
         reshapings = map(tuple, reshapings)
+        # print(list(reshapings))
         contractings = map(tuple, contractings)
         globalstrategyshaped = list(np.reshape(*stuff) for stuff in zip(globalstrategyflat, reshapings))
         gloablstrategybroadcast = np.stack(np.broadcast_arrays(*globalstrategyshaped), axis=0)
-
-        # fullshape = tuple(np.full(self.latent_count, self.inflation_order))
-        # fullshape = tuple(self.inflation_orders)
-        # if self.inflation_order == 2:
-        #     inflation_order_gen_count = 1
-        # else:
-        #     inflation_order_gen_count = 2
-        # group_generators = np.empty((self.latent_count, inflation_order_gen_count, self.inflated_observed_count), np.int) #uint would give rise to type casting error
+        indices_to_extract=np.hstack(tuple(shaped_elem[contraction].ravel() for shaped_elem, contraction in zip(
+            gloablstrategybroadcast, contractings)))
+        # print(indices_to_extract)
+        # print("hello")
+        # print(gloablstrategybroadcast.ravel())
         group_generators =[]
-        for latent_to_explore, inflation_order_for_U in enumerate(self.inflation_orders):
+        for latent_to_explore, inflation_order_for_U in enumerate(self.inflations_orders):
             generator_count_for_U = np.minimum(inflation_order_for_U,3)-1
-            #generator_count_for_U = np.minimum(self.inflation_orders,2)
             group_generators_for_U = np.empty((generator_count_for_U, self.inflated_observed_count), np.int)
             # Maybe assert that inflation order must be a strictly positive integer?
             for gen_idx in np.arange(generator_count_for_U):
-                # initialtranspose = MoveToFront(self.latent_count, np.array([latent_to_explore]))
-                # inversetranspose = np.hstack((np.array([0]), 1 + np.argsort(initialtranspose)))
                 initialtranspose = MoveToFront(self.latent_count+1, np.array([latent_to_explore+1]))
                 inversetranspose = np.argsort(initialtranspose)
                 label_permutation = np.arange(inflation_order_for_U)
@@ -295,26 +290,22 @@ class InflatedGraph(LatentVariableGraph):
                 elif gen_idx == 1:
                     label_permutation = np.roll(label_permutation, 1)
 
-                global_permutation = gloablstrategybroadcast.transpose(
-                    tuple(initialtranspose))[label_permutation].transpose(tuple(inversetranspose))
-                # global_permutation = global_permutation[label_permutation]
-                # global_permutation = global_permutation.transpose(tuple(inversetranspose))
-                for broadcasted_perm, contraction, slots in zip(
-                        global_permutation, contractings, globalstrategyflat):
-                    #print(slots)
-                    #np.put_along_axis()
-                    group_generators_for_U[gen_idx, slots] = broadcasted_perm[contraction].ravel()
+                # global_permutation = gloablstrategybroadcast.transpose(
+                #    tuple(initialtranspose))[label_permutation].transpose(tuple(inversetranspose))
+                # global_permutation = tuple(broadcasted_perm[contraction].ravel() for broadcasted_perm, contraction in zip(
+                #    global_permutation, contractings))
+                group_generators_for_U[gen_idx] = gloablstrategybroadcast.transpose(
+                    tuple(initialtranspose))[label_permutation].transpose(
+                    tuple(inversetranspose)).flat[indices_to_extract]
 
+                # for broadcasted_perm, contraction, slots in zip(
+                #         global_permutation, contractings, globalstrategyflat):
+                #
+                #     group_generators_for_U[gen_idx, slots] = broadcasted_perm[contraction].ravel()
+            # print(group_generators_for_U)
             group_generators.append(group_generators_for_U)
 
-                # global_permutation = np.array(list(
-                #     np.broadcast_to(elem, fullshape).transpose(tuple(initialtranspose))[label_permutation] for elem in
-                #     globalstrategyshaped))
-                # global_permutation = np.transpose(global_permutation, tuple(inversetranspose))
-                # global_permutation = np.hstack(
-                #     tuple(global_permutation[i][contractings[i]].ravel() for i in np.arange(self.observed_count)))
-                # group_generators[latent_to_explore, gen_idx] = global_permutation
-
+        # print(group_generators)
         return group_generators
 
     @cached_property
@@ -348,7 +339,7 @@ class InflatedGraph(LatentVariableGraph):
             (Ys, Xs, Zs) = tuple(
                 map(lambda orig_node_indices: np.take(self.diagonal_expressible_set, np.array(orig_node_indices) - self.latent_count),
                     screening[:-1]))
-            symops = [self.inflation_group_generators[U3][0] for U3 in U3s] # Now 2d array
+            symops = np.array([self.inflation_group_generators[U3][0] for U3 in U3s]) # Now 2d array
             Zs_new_world = np.take(reduce(np.take, symops), Zs)
             # The ordering of variables here must reflect the ordering used by Find_b
             # We can return it as a flat array.
@@ -373,7 +364,7 @@ class InflatedGraph(LatentVariableGraph):
         super().print_assessment(wait_for_more = True)
         list_of_strings_to_string = lambda l: '[' + ','.join(l) + ']'
         tuples_of_strings_to_string = lambda l: '(' + ','.join(l) + ')'
-        print("For inflation order %s:" % self.inflation_order)
+        print("For inflation order %s:" % self.inflations_orders)
         print("The inflated diagonal expressible set is given by:")
         print(self.diagonal_expressible_set)
         print("And we count " + str(len(self.extra_expressible_sets)) + " other expressible sets, namely:")

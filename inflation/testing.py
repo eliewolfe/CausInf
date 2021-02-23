@@ -90,7 +90,7 @@ solver='moseklp'
 #solver='mosekAUTO'
 
 #print(InflatedGraph(rawgraph,[2,1,2]).inflation_group_generators)
-InflatedGraph(rawgraph,[1,2,2]).print_assessment()
+InflatedGraph(Evans14a,[2,2,2]).print_assessment()
 
 #Solution=InflationLP(rawgraph, rawdata, card, inflation_order,extra_ex,solver).Inequality()
 
