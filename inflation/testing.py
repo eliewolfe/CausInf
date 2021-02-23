@@ -88,9 +88,11 @@ inflation_order=2
 extra_ex=True
 solver='moseklp'
 #solver='mosekAUTO'
-InflatedGraph(rawgraph,inflation_order).print_assessment()
 
-Solution=InflationLP(rawgraph, rawdata, card, inflation_order,extra_ex,solver).Inequality()
+#print(InflatedGraph(rawgraph,[2,1,2]).inflation_group_generators)
+InflatedGraph(rawgraph,[1,2,2]).print_assessment()
+
+#Solution=InflationLP(rawgraph, rawdata, card, inflation_order,extra_ex,solver).Inequality()
 
 
 

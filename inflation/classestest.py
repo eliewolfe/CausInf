@@ -29,27 +29,7 @@ from inflation.inflationlp import InflationLP
 import sympy as sy
 
 
-def ToRootLexicographicOrdering(g):
-    """
 
-    Parameters
-    ----------
-    g: an iGraph graph
-
-    Returns
-    -------
-    A copy of g with nodes internally ordered such that root nodes are first and non-root nodes are subsequent.
-    Within each set (root \& nonroot) the nodes are ordered lexicographically.
-    """
-    verts = g.vs
-    verts["isroot"] = [0 == i for i in g.indegree()]
-    root_vertices_igraph = verts.select(isroot=True)
-    nonroot_vertices_igraph = verts.select(isroot=False)
-    optimal_root_node_indices = np.take(root_vertices_igraph.indices,np.argsort(root_vertices_igraph["name"]))
-    optimal_nonroot_node_indices = np.take(nonroot_vertices_igraph.indices, np.argsort(nonroot_vertices_igraph["name"]))
-    new_ordering = np.hstack((optimal_root_node_indices,optimal_nonroot_node_indices))
-    #print(np.array_str(np.take(verts["name"],new_ordering)))
-    return g.permute_vertices(np.argsort(new_ordering).tolist())
 
 def MixedCardinalityBaseConversion(cardinality, string):
     card=np.array([cardinality[i]**(len(cardinality)-(i+1)) for i in range(len(cardinality))])
@@ -61,9 +41,33 @@ def MixedCardinalityBaseConversion(cardinality, string):
 class LatentVariableGraph:
     # __slots__ = ['g','latent_count','observed_count']
 
+    @staticmethod
+    def ToRootLexicographicOrdering(g):
+        """
+
+        Parameters
+        ----------
+        g: an iGraph graph
+
+        Returns
+        -------
+        A copy of g with nodes internally ordered such that root nodes are first and non-root nodes are subsequent.
+        Within each set (root \& nonroot) the nodes are ordered lexicographically.
+        """
+        verts = g.vs
+        verts["isroot"] = [0 == i for i in g.indegree()]
+        root_vertices_igraph = verts.select(isroot=True)
+        nonroot_vertices_igraph = verts.select(isroot=False)
+        optimal_root_node_indices = np.take(root_vertices_igraph.indices, np.argsort(root_vertices_igraph["name"]))
+        optimal_nonroot_node_indices = np.take(nonroot_vertices_igraph.indices,
+                                               np.argsort(nonroot_vertices_igraph["name"]))
+        new_ordering = np.hstack((optimal_root_node_indices, optimal_nonroot_node_indices))
+        # print(np.array_str(np.take(verts["name"],new_ordering)))
+        return g.permute_vertices(np.argsort(new_ordering).tolist())
+
 
     def __init__(self, rawgraph):
-        g = ToRootLexicographicOrdering(rawgraph)
+        g = self.ToRootLexicographicOrdering(rawgraph)
         verts = g.vs
         verts["isroot"] = [0 == i for i in g.indegree()]
         root_vertices = verts.select(isroot=True).indices
@@ -216,8 +220,7 @@ class LatentVariableGraph:
 class InflatedGraph(LatentVariableGraph):
     
     def __init__(self, rawgraph ,inflation_order):
-
-
+        LatentVariableGraph.__init__(self, rawgraph)
         self.inflation_order=inflation_order #To be deprecated after transition to mixed inflation order.
 
         if isinstance(inflation_order, int):
@@ -227,15 +230,17 @@ class InflatedGraph(LatentVariableGraph):
             self.inflation_orders = np.array(inflation_order)
         self.min_inflation_order = self.inflation_orders.min()
 
+        self.determinism_checks = list(filter(lambda screening : self.inflation_orders[screening[0]] >= 2,
+                                              self.determinism_checks))
+        self.extra_expressible_sets = list(filter(lambda screening: self.inflation_orders[screening[-1]] >= 2,
+                                              self.extra_expressible_sets))
 
-        LatentVariableGraph.__init__(self, rawgraph)
-        #self.determinism_checks= LatentVariableGraph(g).determinism_checks
-        #self.extra_expressible_sets =LatentVariableGraph(g).extra_expressible_sets
-        #self.obs_count=LatentVariableGraph(g).observed_count
-        #self.latent_count = len(LatentVariableGraph(g).parents_of) - self.obs_count
         self.root_structure = self.roots_of[self.latent_count:]
+
         self.inflation_depths = np.array(list(map(len, self.root_structure))) #Counts how many roots each random variable has. Should be deprecated upon upgrading to mixed inflation order.
-        self.inflation_copies = self.inflation_orders ** self.inflation_depths #Counts how many times each random variable is copied.
+        # self.inflation_copies = self.inflation_orders ** self.inflation_depths #Counts how many times each random variable is copied.
+        self.inflation_copies = np.fromiter((self.inflation_orders.take(latent_parents).prod() for latent_parents in self.root_structure), np.int)
+
         #self.inflated_observed_count = self.inflation_copies.sum()
         accumulated = np.add.accumulate(self.inflation_copies)
         self.inflated_observed_count = accumulated[-1]
@@ -253,54 +258,80 @@ class InflatedGraph(LatentVariableGraph):
 
     @cached_property
     def inflation_group_generators(self):
-        #Upgrade to mixed inflation order IN PROGRESS
+        #Upgrade to mixed inflation order IN PROGRESS (Also need to upgrade determinism and AI to check if n>2!)
         globalstrategyflat = list(np.add(*stuff) for stuff in zip(list(map(np.arange, self.inflation_copies.tolist())), self.offsets))
         reshapings = np.ones((self.observed_count, self.latent_count), np.uint8)
         contractings = np.zeros((self.observed_count, self.latent_count), np.object)
-        for idx, elem in enumerate(self.root_structure):
-            reshapings[idx][elem] = self.inflation_order
-            contractings[idx][elem] = np.s_[:]
-        reshapings = list(map(tuple, reshapings))
-        contractings = list(map(tuple, contractings))
+        for idx, latent_ancestors in enumerate(self.root_structure):
+            # reshapings[idx][latent_ancestors] = self.inflation_order
+            reshapings[idx][latent_ancestors] = self.inflation_orders[latent_ancestors]
+            contractings[idx][latent_ancestors] = np.s_[:]
+        reshapings = map(tuple, reshapings)
+        contractings = map(tuple, contractings)
         globalstrategyshaped = list(np.reshape(*stuff) for stuff in zip(globalstrategyflat, reshapings))
-        #fullshape = tuple(np.full(self.latent_count, self.inflation_order))
-        fullshape = tuple(self.inflation_orders)
-        if self.inflation_order == 2:
-            inflation_order_gen_count = 1
-        else:
-            inflation_order_gen_count = 2
-        group_generators = np.empty((self.latent_count, inflation_order_gen_count, self.inflated_observed_count), np.int) #uint would give rise to type casting error
-        for latent_to_explore in np.arange(self.latent_count):
-            for gen_idx in np.arange(inflation_order_gen_count):
-                initialtranspose = MoveToFront(self.latent_count, np.array([latent_to_explore]))
-                inversetranspose = np.hstack((np.array([0]), 1 + np.argsort(initialtranspose)))
-                label_permutation = np.arange(self.inflation_order)
+        gloablstrategybroadcast = np.stack(np.broadcast_arrays(*globalstrategyshaped), axis=0)
+
+        # fullshape = tuple(np.full(self.latent_count, self.inflation_order))
+        # fullshape = tuple(self.inflation_orders)
+        # if self.inflation_order == 2:
+        #     inflation_order_gen_count = 1
+        # else:
+        #     inflation_order_gen_count = 2
+        # group_generators = np.empty((self.latent_count, inflation_order_gen_count, self.inflated_observed_count), np.int) #uint would give rise to type casting error
+        group_generators =[]
+        for latent_to_explore, inflation_order_for_U in enumerate(self.inflation_orders):
+            generator_count_for_U = np.minimum(inflation_order_for_U,3)-1
+            #generator_count_for_U = np.minimum(self.inflation_orders,2)
+            group_generators_for_U = np.empty((generator_count_for_U, self.inflated_observed_count), np.int)
+            # Maybe assert that inflation order must be a strictly positive integer?
+            for gen_idx in np.arange(generator_count_for_U):
+                # initialtranspose = MoveToFront(self.latent_count, np.array([latent_to_explore]))
+                # inversetranspose = np.hstack((np.array([0]), 1 + np.argsort(initialtranspose)))
+                initialtranspose = MoveToFront(self.latent_count+1, np.array([latent_to_explore+1]))
+                inversetranspose = np.argsort(initialtranspose)
+                label_permutation = np.arange(inflation_order_for_U)
                 if gen_idx == 0:
-                    label_permutation[np.array([0, 1])] = np.array([1, 0])
+                    label_permutation[:2] = [1, 0]
                 elif gen_idx == 1:
                     label_permutation = np.roll(label_permutation, 1)
-                global_permutation = np.array(list(
-                    np.broadcast_to(elem, fullshape).transpose(tuple(initialtranspose))[label_permutation] for elem in
-                    globalstrategyshaped))
-                global_permutation = np.transpose(global_permutation, tuple(inversetranspose))
-                global_permutation = np.hstack(
-                    tuple(global_permutation[i][contractings[i]].ravel() for i in np.arange(self.observed_count)))
-                group_generators[latent_to_explore, gen_idx] = global_permutation
+
+                global_permutation = gloablstrategybroadcast.transpose(
+                    tuple(initialtranspose))[label_permutation].transpose(tuple(inversetranspose))
+                # global_permutation = global_permutation[label_permutation]
+                # global_permutation = global_permutation.transpose(tuple(inversetranspose))
+                for broadcasted_perm, contraction, slots in zip(
+                        global_permutation, contractings, globalstrategyflat):
+                    #print(slots)
+                    #np.put_along_axis()
+                    group_generators_for_U[gen_idx, slots] = broadcasted_perm[contraction].ravel()
+
+            group_generators.append(group_generators_for_U)
+
+                # global_permutation = np.array(list(
+                #     np.broadcast_to(elem, fullshape).transpose(tuple(initialtranspose))[label_permutation] for elem in
+                #     globalstrategyshaped))
+                # global_permutation = np.transpose(global_permutation, tuple(inversetranspose))
+                # global_permutation = np.hstack(
+                #     tuple(global_permutation[i][contractings[i]].ravel() for i in np.arange(self.observed_count)))
+                # group_generators[latent_to_explore, gen_idx] = global_permutation
+
         return group_generators
 
     @cached_property
     def inflation_group_elements(self):
-        return np.array(dimino_wolfe(self.inflation_group_generators.reshape((-1, self.inflated_observed_count))))
+        return np.array(dimino_wolfe(np.vstack(self.inflation_group_generators))) #Should be ok with different number of generators per latent
+        # return np.array(dimino_wolfe(self.inflation_group_generators.reshape((-1, self.inflated_observed_count))))
 
-    def _InflateOneDeterminismAssumption(self, screening):
-        U1s = screening[0]
-        XsY = np.array(list(screening[2]) + list(screening[1])) - self.latent_count
-        flatset_original_world = np.take(self.diagonal_expressible_set, XsY)
-        symops = self.inflation_group_generators[U1s, 0]  # Now 2d array
-        flatset_new_world = np.take(reduce(np.take, symops), flatset_original_world)
-        rule = np.vstack((flatset_original_world, flatset_new_world)).T.astype('uint32')
-        rule = rule[:-1, :].T.tolist() + rule[-1, :].T.tolist()
-        return rule
+    def _InflateOneDeterminismAssumption(self):
+        for screening in self.determinism_checks:
+            U1s = screening[0]
+            XsY = np.array(list(screening[2]) + list(screening[1])) - self.latent_count
+            flatset_original_world = np.take(self.diagonal_expressible_set, XsY)
+            symops = [self.inflation_group_generators[U1][0] for U1 in U1s] # Now 2d array
+            flatset_new_world = np.take(reduce(np.take, symops), flatset_original_world)
+            rule = np.vstack((flatset_original_world, flatset_new_world)).T.astype('uint32')
+            rule = rule[:-1, :].T.tolist() + rule[-1, :].T.tolist()
+            yield rule
 
     @cached_property
     def inflated_determinism_checks(self):
@@ -309,21 +340,23 @@ class InflatedGraph(LatentVariableGraph):
         Ys are screened off from U1s by Xs. (Ys is always a list with only one element.)
         Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)
         """
-        return list(map(self._InflateOneDeterminismAssumption, self.determinism_checks))
+        return list(self._InflateOneDeterminismAssumption())
 
-    def _InflateOneExpressibleSet(self, screening):
-        U3s = screening[-1]
-        (Ys, Xs, Zs) = tuple(
-            map(lambda orig_node_indices: np.take(self.diagonal_expressible_set, np.array(orig_node_indices) - self.latent_count),
-                screening[:-1]))  # Feb 2 2021: reindexed as U1s no longer passed to e_eset
-        symops = self.inflation_group_generators[U3s, 0]  # Now 2d array
-        Zs_new_world = np.take(reduce(np.take, symops), Zs)
-        # The ordering of variables here must reflect the ordering used by Find_b
-        # We can return it as a flat array.
-        variable_ordering = np.argsort(np.hstack(screening[:-1]))
-        # nonai_exp_set = (Ys.tolist(),Xs.tolist(),Zs_new_world.tolist()) #Changed ordering
-        nonai_exp_set = np.hstack((Ys, Xs, Zs_new_world)).take(variable_ordering)  # Changed ordering
-        return nonai_exp_set
+    def _InflateOneExpressibleSet(self):
+        for screening in self.extra_expressible_sets:
+            U3s = screening[-1]
+            (Ys, Xs, Zs) = tuple(
+                map(lambda orig_node_indices: np.take(self.diagonal_expressible_set, np.array(orig_node_indices) - self.latent_count),
+                    screening[:-1]))
+            symops = [self.inflation_group_generators[U3][0] for U3 in U3s] # Now 2d array
+            Zs_new_world = np.take(reduce(np.take, symops), Zs)
+            # The ordering of variables here must reflect the ordering used by Find_b
+            # We can return it as a flat array.
+            variable_ordering = np.argsort(np.hstack(screening[:-1]))
+            # nonai_exp_set = (Ys.tolist(),Xs.tolist(),Zs_new_world.tolist()) #Changed ordering
+            nonai_exp_set = np.hstack((Ys, Xs, Zs_new_world)).take(variable_ordering)  # Changed ordering
+            yield nonai_exp_set
+
 
     # TODO: Explore larger sets being screened off. What about Ys PLURAL being screened off from U1s? Isn't that worth looking into?
     @cached_property
@@ -334,7 +367,7 @@ class InflatedGraph(LatentVariableGraph):
         Ys are screened off from U1s by Xs. (Ys is always a list with only one element.)
         Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)
         """
-        return list(map(self._InflateOneExpressibleSet, self.extra_expressible_sets))
+        return list(self._InflateOneExpressibleSet())
 
     def print_assessment(self):
         super().print_assessment(wait_for_more = True)
