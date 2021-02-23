@@ -216,8 +216,18 @@ class LatentVariableGraph:
 class InflatedGraph(LatentVariableGraph):
     
     def __init__(self, rawgraph ,inflation_order):
-        
-        self.inflation_order=inflation_order
+
+
+        self.inflation_order=inflation_order #To be deprecated after transition to mixed inflation order.
+
+        if isinstance(inflation_order, int):
+            self.inflation_orders = np.full(self.latent_count,inflation_order)
+        else:  # When inflation_order is specified as a list
+            assert isinstance(inflation_order, (list, tuple, np.ndarray)), 'Inflation orders not given as list of integers.'
+            self.inflation_orders = np.array(inflation_order)
+        self.min_inflation_order = self.inflation_orders.min()
+
+
         LatentVariableGraph.__init__(self, rawgraph)
         #self.determinism_checks= LatentVariableGraph(g).determinism_checks
         #self.extra_expressible_sets =LatentVariableGraph(g).extra_expressible_sets
@@ -225,7 +235,7 @@ class InflatedGraph(LatentVariableGraph):
         #self.latent_count = len(LatentVariableGraph(g).parents_of) - self.obs_count
         self.root_structure = self.roots_of[self.latent_count:]
         self.inflation_depths = np.array(list(map(len, self.root_structure))) #Counts how many roots each random variable has. Should be deprecated upon upgrading to mixed inflation order.
-        self.inflation_copies = self.inflation_order ** self.inflation_depths #Counts how many times each random variable is copied.
+        self.inflation_copies = self.inflation_orders ** self.inflation_depths #Counts how many times each random variable is copied.
         #self.inflated_observed_count = self.inflation_copies.sum()
         accumulated = np.add.accumulate(self.inflation_copies)
         self.inflated_observed_count = accumulated[-1]
@@ -234,15 +244,16 @@ class InflatedGraph(LatentVariableGraph):
     @cached_property
     def diagonal_expressible_set(self):
     # offsets=GenerateOffsets(inflation_order,inflation_depths)
-        order_range = np.arange(self.inflation_order)
-        cannonical_pos = np.empty((self.observed_count, self.inflation_order), dtype=np.int) #uint would give rise to type casting error
+        order_range = np.arange(self.min_inflation_order)
+        cannonical_pos = np.empty((self.observed_count, self.min_inflation_order), dtype=np.int) #uint would give rise to type casting error
         for i in np.arange(self.observed_count):
-            cannonical_pos[i] = np.sum(np.outer(self.inflation_order ** np.arange(self.inflation_depths[i]), order_range), axis=0) + \
+            cannonical_pos[i] = np.sum(np.outer(self.min_inflation_order ** np.arange(self.inflation_depths[i]), order_range), axis=0) + \
                                 self.offsets[i]
         return cannonical_pos.T.ravel()
 
     @cached_property
     def inflation_group_generators(self):
+        #Upgrade to mixed inflation order IN PROGRESS
         globalstrategyflat = list(np.add(*stuff) for stuff in zip(list(map(np.arange, self.inflation_copies.tolist())), self.offsets))
         reshapings = np.ones((self.observed_count, self.latent_count), np.uint8)
         contractings = np.zeros((self.observed_count, self.latent_count), np.object)
@@ -252,7 +263,8 @@ class InflatedGraph(LatentVariableGraph):
         reshapings = list(map(tuple, reshapings))
         contractings = list(map(tuple, contractings))
         globalstrategyshaped = list(np.reshape(*stuff) for stuff in zip(globalstrategyflat, reshapings))
-        fullshape = tuple(np.full(self.latent_count, self.inflation_order))
+        #fullshape = tuple(np.full(self.latent_count, self.inflation_order))
+        fullshape = tuple(self.inflation_orders)
         if self.inflation_order == 2:
             inflation_order_gen_count = 1
         else:
@@ -399,7 +411,7 @@ class ObservationalData:
         self.cardinalities_tuple = tuple(self.cardinalities_array.tolist())
         self.data_reshaped = np.reshape(self.data_flat,self.cardinalities_tuple)
 
-class InflationProblem(InflatedGraph,ObservationalData):
+class InflationProblem(InflatedGraph, ObservationalData):
     
     def __init__(self,rawgraph,rawdata,card,inflation_order):
         InflatedGraph.__init__(self, rawgraph,inflation_order)
@@ -452,56 +464,15 @@ class InflationProblem(InflatedGraph,ObservationalData):
         AMatrix = np.compress(minima == np.abs(AMatrix[0]), AMatrix, axis=1)
         return AMatrix
 
-    def EncodedMonomialToRow(self, product):  # Cached in memory, as this function is called by both inflation matrix and inflation vector construction.    
-        """
-        Parameters
-        ----------
-        original_cardinality_product : int
-            The number of permutations of observable variable configurations given by :math:`(\mbox{cardinality})^{(\mbox{number of observable variables})}`
-             
-        inflation_order : int
-            The order of the inflation matrix.
-    
-        Returns
-        -------
-        EncodingMonomialToRow : vector_of_integers
-            A numerical vector where each element represents a row and the value of each element represents the index of that row under the symmetry conditions exerted by the cannonical expressible set of the inflated graph.
-        
-        Notes
-        -----
-        
-        For each row there is a set of symmetric rows produced by the interchange of the copy indecies of the observable variables that create the expressible set. While computing the value of each element of EncodingMonomialToRow, the function chooses the row inside the symmetric set with the smallest index.
-        
-        Examples
-        --------
-        For a graph of 3 observable variables, each with cardinality 4:
-        
-        >>> obs_count=3    
-        >>> card=4    
-        >>> original_cardinality_product=card**obs_count
-        
-        With an inflation order of 2:
-            
-        >>> inflation_order=2    
-        >>> EncodingMonomialToRow=GenerateEncodingMonomialToRow(original_cardinality_product,inflation_order)
-        
-        There will be :math:`4^{3}=4096` rows
-        
-        >>> print(len(EncodingMonomialToRow))
-        >>> 4096
-        
-        The intechange of the copy indecies of the variables that make up the 6 element cannonical expressible set will produce a 2-fold symmetry and therefore the largest row index inside EncodingMonomialToRow will be :math:`(4096/2)-1=2079`.
-        
-        >>> print(EncodingMonomialToRow)
-        >>> [   0    1    2 ... 2076 2078 2079]
-        """
-        
-        monomial_count = int(product**self.inflation_order)    
-        permutation_count = int(np.math.factorial(self.inflation_order))
+    @cached_property
+    def EncodedMonomialToRow(self):  # Cached in memory, as this function is called by both inflation matrix and inflation vector construction.
+        # monomial_count = self.inflated_cardinalities_array.take(self.diagonal_expressible_set).prod()
+        monomial_count = int(self.original_cardinality_product ** self.min_inflation_order)
+        permutation_count = int(np.math.factorial(self.min_inflation_order))
         MonomialIntegers = np.arange(0, monomial_count, 1, np.uint)
-        new_shape = np.full(self.inflation_order, product)
+        new_shape = np.full(self.min_inflation_order, self.original_card_product)
         MonomialIntegersPermutations = np.empty([permutation_count, monomial_count], np.uint)
-        IndexPermutations = list(permutations(np.arange(self.inflation_order)))
+        IndexPermutations = list(permutations(np.arange(self.min_inflation_order)))
         MonomialIntegersPermutations[0] = MonomialIntegers
         MonomialIntegers = MonomialIntegers.reshape(new_shape)
         for i in np.arange(1, permutation_count):
@@ -520,7 +491,7 @@ class InflationProblem(InflatedGraph,ObservationalData):
         return EncodingColumnToMonomial
     
     def EncodedA(self):
-        result = self.EncodedMonomialToRow(self.original_card_product).take(self.EncodedColumnToMonomial(self.diagonal_expressible_set)).take(self.ValidColumnOrbits)
+        result = self.EncodedMonomialToRow.take(self.EncodedColumnToMonomial(self.diagonal_expressible_set)).take(self.ValidColumnOrbits)
         # Once the encoding is done, the order of the columns can be tweaked at will!
         result.sort(axis=0)  # in-place sort
         return result
@@ -529,7 +500,7 @@ class InflationProblem(InflatedGraph,ObservationalData):
         
         row_blocks_count=len(self.inflated_offdiagonal_expressible_sets)+1
         results = np.empty(np.hstack((row_blocks_count,self.ValidColumnOrbits.shape)), np.uint32)
-        results[0] = self.EncodedMonomialToRow(self.original_card_product).take(self.EncodedColumnToMonomial(self.diagonal_expressible_set)).take(self.ValidColumnOrbits)
+        results[0] = self.EncodedMonomialToRow.take(self.EncodedColumnToMonomial(self.diagonal_expressible_set)).take(self.ValidColumnOrbits)
         for i in np.arange(1,row_blocks_count):
             #It is critical to pass the same ORDER of variables to GenerateEncodingColumnToMonomial and to Find_B_block
             #In order for names to make sense, I am electing to pass a SORTED version of the flat set, see InflateOneExpressibleSet
@@ -544,14 +515,6 @@ class InflationProblem(InflatedGraph,ObservationalData):
         """
         Parameters
         ----------
-        g : igraph.Graph
-            The causal graph containing all of the observable and latent variables.
-             
-        inflation_order : int
-            The order of the inflation matrix.
-    
-        card : int
-            The cardinality of every observable variable.
             
         extra_expressible : bool,optional
             If True the rows representing the non-cannonical expressible sets are included in the marginal description matrix (default set to False)
@@ -584,7 +547,7 @@ class InflationProblem(InflatedGraph,ObservationalData):
         
         We would expect to obtain a marginal description matrix with 2123776 columns (reduced from :math:`4^{12}=16777216` by imposing the symmetry conditions of the copy indecies on different strategies) and 2080 rows (reduced from :math:`4^{6}=4096` by imposing the same symmetry conditions on the expressible sets):
             
-        >>> InfMat = InflationMatrixFromGraph(g, inflation_order, card)
+        >>> InfMat = InflationMatrixFromGraph(extra_expressible=False)
         >>> print(InfMat.shape)
         >>> (2080, 2123776)
         
@@ -602,7 +565,7 @@ class InflationProblem(InflatedGraph,ObservationalData):
         pre_symbolic_b = np.array(['P(' + ''.join([''.join(str(i)) for i in idx]) + ')' for idx in
                        np.ndindex(self.original_cardinalities_tuple)])
         symbolic_b = pre_symbolic_b.copy()
-        for i in range(1, self.inflation_order):
+        for i in range(1, self.min_inflation_order):
             numeric_b = np.kron(pre_numeric_b, numeric_b)
             symbolic_b = [s1+s2 for s1 in pre_symbolic_b for s2 in symbolic_b]
         numeric_b_block = np.multiply(numeric_b.take(idx), counts)
