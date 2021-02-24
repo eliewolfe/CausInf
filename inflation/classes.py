@@ -21,11 +21,11 @@ if __name__ == '__main__':
     import sys
     import pathlib
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from inflation.dimino import dimino_wolfe
-from inflation.utilities import MoveToFront, PositionIndex, MoveToBack, SparseMatrixFromRowsPerColumn
-from inflation.moseklp import InfeasibilityCertificate
-from inflation.mosekinfeas import InfeasibilityCertificateAUTO
-from inflation.inflationlp import InflationLP
+from internal_functions.dimino import dimino_wolfe
+from internal_functions.utilities import MoveToFront, PositionIndex, MoveToBack, SparseMatrixFromRowsPerColumn
+from linear_program_options.moseklp import InfeasibilityCertificate
+from linear_program_options.mosekinfeas import InfeasibilityCertificateAUTO
+from linear_program_options.inflationlp import InflationLP
 import sympy as sy
 import operator
 
@@ -245,7 +245,7 @@ class InflatedGraph(LatentVariableGraph):
         #self.inflated_observed_count = self.inflation_copies.sum()
         accumulated = np.add.accumulate(self.inflation_copies)
         self.inflated_observed_count = accumulated[-1]
-
+        
         self.offsets = np.hstack(([0], accumulated[:-1]))
         self._canonical_pos = [
             np.outer(inflation_minimum ** np.arange(inflation_depth), np.arange(inflation_minimum)).sum(axis=0) + offset
@@ -253,6 +253,8 @@ class InflatedGraph(LatentVariableGraph):
                         in zip(self.inflation_minima, self.inflation_depths, self.offsets)]
         #print(self._canonical_pos)
         self.canonical_world = np.fromiter((pos[0] for pos in self._canonical_pos), np.int)
+        print(self._canonical_pos)
+        print(self.canonical_world)
         #self.expressible_set_variants = list(permutations(zip_longest(*self._canonical_pos, fillvalue=-1)))
         #print(self.expressible_set_variants)
         # self.expressible_set_variants = np.array([np.hstack(np.vstack(perm).T) for perm in permutations(zip(*zip_longest(*self._canonical_pos, fillvalue=-1)))])
