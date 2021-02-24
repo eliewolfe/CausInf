@@ -6,11 +6,13 @@ Input as permutations lists in numpy array format.
 """
 
 import numpy as np
-from numba import njit
+#from numba import njit, i8
+import numba
+from numba.np.unsafe.ndarray import to_fixed_tuple
 
 
-@njit
-def Is_vec_in_mat(vec, mat):
+@numba.njit
+def is_vec_in_mat(vec, mat):
     assume = True
     for elem in mat:
         if np.array_equal(vec, elem):
@@ -19,13 +21,14 @@ def Is_vec_in_mat(vec, mat):
     return assume
 
 
-@njit
+@numba.njit
 def dimino_wolfe(group_generators):
     gens = group_generators
     degree = np.max(gens) + 1
     idn = np.arange(degree)
     order = 0
-    element_list = [idn]
+    element_list = numba.typed.List()
+    element_list.append(idn)
     # element_list=np.atleast_2d(idn)
     # set_element_list = {tuple(idn)}
     for i in np.arange(len(gens)):
@@ -38,7 +41,7 @@ def dimino_wolfe(group_generators):
             for a in A:
                 for g in gens[:i + 1]:
                     ag = a[g]
-                    if Is_vec_in_mat(ag, element_list):
+                    if is_vec_in_mat(ag, element_list):
                         # if not np.any(np.all(ag==np.array(element_list,np.int64),axis=1)):
                         # if ag not in np.array(element_list):
                         # if tuple(ag) not in set_element_list:
@@ -51,3 +54,96 @@ def dimino_wolfe(group_generators):
                             # set_element_list.add(tuple(ap))
                             N.append(ap)
     return element_list
+
+
+
+@numba.njit
+def indexed_tensor(dims):
+    return np.arange(np.prod(np.array(dims))).reshape(dims)
+
+@numba.njit
+def symmetrize_implicit_tensor(dims, group, skip=0):
+    """
+    Parameters
+    ----------
+    dims: a tuple of integers, specifying the shape of the implicit tensor
+    
+    group: a 2d numpy.ndarray, each row being a permutation list representation of a group element
+
+    Returns
+    -------
+    A symmetrized version of the indexed tensor.
+    """
+    rank = len(dims)
+    tensor = indexed_tensor(dims)
+    #rank = tensor.ndim
+    #tensor = tensor.copy()
+    for index_permutation in group[skip:]:
+        tensor = np.minimum(
+            tensor,
+            tensor.transpose(to_fixed_tuple(index_permutation,rank)))
+    return tensor
+
+
+
+def symmetrize_tensor(tensor, group, skip=0):
+    """
+    Parameters
+    ----------
+    tensor: a numpy.ndarray, with the number of dimension matching the support of the group
+
+    group: a 2d numpy.ndarray, each row being a permutation list representation of a group element
+
+    Returns
+    -------
+    Null, the tensor is symmetrized IN PLACE.
+    """
+    for index_permutation in group[skip:]:
+        np.minimum(
+            tensor,
+            tensor.transpose(index_permutation),
+            out = tensor)
+
+
+
+
+
+#@numba.njit
+def orbits_of_implicit_tensor(dims, group):
+    groupT = np.transpose(group)
+    searched_already = np.full(dims, False)
+    rank = len(dims)
+    discovered_orbits = numba.typed.List()
+    for i, s in np.ndenumerate(searched_already):
+        if not s:
+            # orbit = [[i[sg] for sg in g] for g in group]
+            # for suborbit in orbit:
+            #    searched_already[to_fixed_tuple(suborbit,rank)] = True
+            orbit = np.take(i,groupT)
+            searched_already[tuple(orbit)] = True
+            discovered_orbits.append(orbit)
+    return np.ravel_multi_index(np.transpose(discovered_orbits,(1,0,2)),dims)
+
+def orbits_of_implicit_tensor_Ulu_style(dims, group):
+    group_order = len(group)
+    tensor = indexed_tensor(dims)
+    results = np.empty((group_order, tensor.size), np.int)
+    for i, index_permutation in enumerate(group):
+        results[i] = np.transpose(tensor, index_permutation).flat
+    mask = np.amin(results, axis=0) == results[0]
+    return results.compress(mask, axis = 1).T
+
+
+
+
+
+
+if __name__ == '__main__':
+    dims = (3,3,3,3)
+    test_tensor = indexed_tensor(dims)
+    group_generators = np.array([[1,2,3,0]])
+    group_elements = dimino_wolfe(group_generators)
+    #print(group_elements)
+    #tensor = symmetrize_tensor(test_tensor, group_elements, skip=1)
+    #print(test_tensor.ravel())
+    print(orbits_of_implicit_tensor_Ulu_style(dims, group_elements))
