@@ -84,15 +84,15 @@ rawgraph=BellGraph
 rawdata=data
 
 card=[2,2,4,4]
-inflation_order=2
+inflation_order=[1,2,2]
 extra_ex=True
 solver='moseklp'
 #solver='mosekAUTO'
 
 #print(InflatedGraph(rawgraph,[2,1,2]).inflation_group_generators)
-InflatedGraph(Evans14a,[2,2,2]).print_assessment()
+InflatedGraph(rawgraph,inflation_order).print_assessment()
 
-#Solution=InflationLP(rawgraph, rawdata, card, inflation_order,extra_ex,solver).Inequality()
+Solution=InflationLP(rawgraph, rawdata, card, inflation_order,extra_ex,solver).Inequality()
 
 
 

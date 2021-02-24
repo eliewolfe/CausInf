@@ -6,7 +6,7 @@ Learning a little bit about the inflation graph from the original graph
 from __future__ import absolute_import
 import numpy as np
 from scipy.sparse import csr_matrix, coo_matrix
-from itertools import combinations, chain, permutations
+from itertools import combinations, chain, permutations, zip_longest, product, starmap #TODO: just import itertools
 import json
 from collections import defaultdict
 from sys import hexversion
@@ -27,14 +27,11 @@ from inflation.moseklp import InfeasibilityCertificate
 from inflation.mosekinfeas import InfeasibilityCertificateAUTO
 from inflation.inflationlp import InflationLP
 import sympy as sy
+import operator
 
 
 
 
-def MixedCardinalityBaseConversion(cardinality, string):
-    card=np.array([cardinality[i]**(len(cardinality)-(i+1)) for i in range(len(cardinality))])
-    str_to_array=np.array([int(i) for i in string])
-    return np.dot(card,str_to_array)
     
 
 
@@ -99,19 +96,17 @@ class LatentVariableGraph:
         #self.latent_variables = self.vs[self.latent_indices]
         #self.observed_variables = self.vs[self.observed_indices]
 
-
-    def Root_Subsets(self,v):
-        "v is presumed to be a iGraph vertex object."
-        screenable_roots = np.setdiff1d(v["roots_of"], v["parents"])
-        return [self.verts[subroots] for r in np.arange(1, screenable_roots.size + 1) for subroots in
-                combinations(screenable_roots, r)]
+    # def Root_Subsets(self,v): #DEPRACATED
+    #     "v is presumed to be a iGraph vertex object."
+    #     screenable_roots = np.setdiff1d(v["roots_of"], v["parents"])
+    #     return [self.verts[subroots] for r in np.arange(1, screenable_roots.size + 1) for subroots in
+    #             combinations(screenable_roots, r)]
 
     def RootIndices_Subsets(self,v):
         "v is presumed to be an integer specifying some node."
         screenable_roots = np.setdiff1d(self.roots_of[v], self.parents_of[v])
         # return [subroots for r in np.arange(1, screenable_roots.size + 1) for subroots in combinations(screenable_roots, r)]
         return chain.from_iterable(combinations(screenable_roots, r) for r in np.arange(1, screenable_roots.size + 1))
-
 
 
     def _identify_determinism_check(self, root_indices, observed_index):
@@ -158,7 +153,6 @@ class LatentVariableGraph:
             # unblocked_path if screeningset_rest.isdisjoint(directed_path)
             # sidx is redundant if there are not ANY unblocked paths.
             if not any(screeningset_rest.isdisjoint(directed_path) for directed_path in
-                    # self.g.get_all_simple_paths(sidx, to=self.vs[observed])):
                     self.g.get_all_simple_paths(sidx, to=observed)):
                 Xs.remove(sidx)
 
@@ -228,7 +222,8 @@ class InflatedGraph(LatentVariableGraph):
         else:  # When inflation_order is specified as a list
             assert isinstance(inflation_order, (list, tuple, np.ndarray)), 'Inflation orders not given as list of integers.'
             self.inflations_orders = np.array(inflation_order)
-        self.min_inflation_order = self.inflations_orders.min()
+        self.min_inflation_order = self.inflations_orders.min() #Should be deprecated after upgrade to diagonal expressible set
+        self.max_inflation_order = self.inflations_orders.max()
 
         self.determinism_checks = list(filter(lambda screening : all(U >= 2 for U in self.inflations_orders[screening[0]]),
                                               self.determinism_checks))
@@ -237,24 +232,77 @@ class InflatedGraph(LatentVariableGraph):
 
         self.root_structure = self.roots_of[self.latent_count:]
 
-        self.inflation_depths = np.array(list(map(len, self.root_structure))) #Counts how many roots each random variable has. Should be deprecated upon upgrading to mixed inflation order.
+        #self.inflation_depths = np.array(list(map(len, self.root_structure))) #Counts how many roots each random variable has. Should be deprecated upon upgrading to mixed inflation order.
         # self.inflation_copies = self.inflations_orders ** self.inflation_depths #Counts how many times each random variable is copied.
-        self.inflation_copies = np.fromiter((self.inflations_orders.take(latent_parents).prod() for latent_parents in self.root_structure), np.int)
+        self._latent_ancestors_cardinalities_of = [self.inflations_orders.take(latent_parents) for latent_parents in self.root_structure]
+        #self.inflation_copies = np.fromiter((self.inflations_orders.take(latent_parents).prod() for latent_parents in self.root_structure), np.int)
+        self.inflation_copies = np.fromiter(map(np.prod, self._latent_ancestors_cardinalities_of), np.int)
+        self.inflation_minima = np.fromiter(map(np.amin, self._latent_ancestors_cardinalities_of), np.int)
+        self.inflation_depths = np.fromiter(map(len,     self._latent_ancestors_cardinalities_of), np.int)
+
+        self.from_inflation_indices = np.repeat(np.arange(self.observed_count), self.inflation_copies)
 
         #self.inflated_observed_count = self.inflation_copies.sum()
         accumulated = np.add.accumulate(self.inflation_copies)
         self.inflated_observed_count = accumulated[-1]
+
         self.offsets = np.hstack(([0], accumulated[:-1]))
+        self._canonical_pos = [
+            np.outer(inflation_minimum ** np.arange(inflation_depth), np.arange(inflation_minimum)).sum(axis=0) + offset
+                        for inflation_minimum, inflation_depth, offset
+                        in zip(self.inflation_minima, self.inflation_depths, self.offsets)]
+        #print(self._canonical_pos)
+        self.canonical_world = np.fromiter((pos[0] for pos in self._canonical_pos), np.int)
+        #self.expressible_set_variants = list(permutations(zip_longest(*self._canonical_pos, fillvalue=-1)))
+        #print(self.expressible_set_variants)
+        # self.expressible_set_variants = np.array([np.hstack(np.vstack(perm).T) for perm in permutations(zip(*zip_longest(*self._canonical_pos, fillvalue=-1)))])
+        # expressible_set_variants_filter = np.add(self.expressible_set_variants,1).astype(np.bool)
+        # print(expressible_set_variants_filter == np.atleast_2d(expressible_set_variants_filter[0]))
+        # self.expressible_set_variants = self.expressible_set_variants.compress(
+        #     (expressible_set_variants_filter == np.atleast_2d(expressible_set_variants_filter[0])).all(axis = 1),
+        #     axis = 0)
+        #
+        # self.expressible_set_variants = np.array([eset.compress(np.add(eset,1).astype(np.bool)) for eset in self.expressible_set_variants])
+        # self.diagonal_expressible_set = self.expressible_set_variants[0]
+
+    @cached_property
+    def expressible_set_variants(self):
+        unfiltered_variants = np.array([np.hstack(np.vstack(perm).T) for perm in permutations(zip(*zip_longest(*self._canonical_pos, fillvalue=-1)))])
+        expressible_set_variants_filter = np.add(unfiltered_variants,1).astype(np.bool)
+        unfiltered_variants = unfiltered_variants.compress(
+            (expressible_set_variants_filter == np.atleast_2d(expressible_set_variants_filter[0])).all(axis = 1),
+            axis = 0)
+        return np.array([eset.compress(np.add(eset,1).astype(np.bool)) for eset in unfiltered_variants])
 
     @cached_property
     def diagonal_expressible_set(self):
-    # offsets=GenerateOffsets(inflation_order,inflation_depths)
-        order_range = np.arange(self.min_inflation_order)
-        cannonical_pos = np.empty((self.observed_count, self.min_inflation_order), dtype=np.int) #uint would give rise to type casting error
-        for i in np.arange(self.observed_count):
-            cannonical_pos[i] = np.sum(np.outer(self.min_inflation_order ** np.arange(self.inflation_depths[i]), order_range), axis=0) + \
-                                self.offsets[i]
-        return cannonical_pos.T.ravel()
+        return self.expressible_set_variants[0]
+
+    @property
+    def partitioned_expressible_set(self):
+        return [np.compress(np.add(part,1).astype(np.bool),part)
+                for part in zip_longest(*self._canonical_pos, fillvalue=-1)]
+
+
+    # @staticmethod #Not Needed
+    # def _find_permutation(v1, v2):
+    #     return np.argsort(v1).take(np.argsort(np.argsort(v2)))
+
+    @property
+    def diagonal_expressible_set_symmetry_group(self):
+        core_order = np.argsort(np.argsort(self.diagonal_expressible_set))
+        return np.take_along_axis(np.argsort(self.expressible_set_variants[1:],axis=1), np.atleast_2d(core_order), axis=1)
+        #I know I can do this more efficiently, but I don't care at the moment.
+       #return map(lambda v : np.argsort(v).take(core_order), self.expressible_set_variants[1:])
+
+    # def diagonal_expressible_set(self): #REPLACED, now computed during initialization.
+    # # This min_inflation_order is most pertinent to understanding the ACTION of the diagonal symmetry group on the diagonal expressible set
+    # # The SIZE of the diagonal expressible set, however, can be much larger
+    #     #for latent_parents, offset in zip(self.root_structure,self.offsets):
+    #     canonical_pos = [np.outer(inflation_minimum ** np.arange(inflation_depth), np.arange(inflation_minimum)).sum(axis=0) + offset for \
+    #         inflation_minimum, inflation_depth, offset in zip(self.inflation_minima, self.inflation_depths, self.offsets)]
+    #
+    #         return canonical_pos.T.ravel()
 
     @cached_property
     def inflation_group_generators(self):
@@ -272,10 +320,11 @@ class InflatedGraph(LatentVariableGraph):
         globalstrategyshaped = list(np.reshape(*stuff) for stuff in zip(globalstrategyflat, reshapings))
         gloablstrategybroadcast = np.stack(np.broadcast_arrays(*globalstrategyshaped), axis=0)
         indices_to_extract=np.hstack(tuple(shaped_elem[contraction].ravel() for shaped_elem, contraction in zip(
-            gloablstrategybroadcast, contractings)))
+            np.arange(gloablstrategybroadcast.size).reshape(gloablstrategybroadcast.shape), contractings)))
         # print(indices_to_extract)
         # print("hello")
-        # print(gloablstrategybroadcast.ravel())
+        #print(gloablstrategybroadcast)
+        #print(gloablstrategybroadcast.flat[indices_to_extract])
         group_generators =[]
         for latent_to_explore, inflation_order_for_U in enumerate(self.inflations_orders):
             generator_count_for_U = np.minimum(inflation_order_for_U,3)-1
@@ -317,7 +366,7 @@ class InflatedGraph(LatentVariableGraph):
         for screening in self.determinism_checks:
             U1s = screening[0]
             XsY = np.array(list(screening[2]) + list(screening[1])) - self.latent_count
-            flatset_original_world = np.take(self.diagonal_expressible_set, XsY)
+            flatset_original_world = np.take(self.canonical_world, XsY)
             symops = [self.inflation_group_generators[U1][0] for U1 in U1s] # Now 2d array
             flatset_new_world = np.take(reduce(np.take, symops), flatset_original_world)
             rule = np.vstack((flatset_original_world, flatset_new_world)).T.astype('uint32')
@@ -337,7 +386,7 @@ class InflatedGraph(LatentVariableGraph):
         for screening in self.extra_expressible_sets:
             U3s = screening[-1]
             (Ys, Xs, Zs) = tuple(
-                map(lambda orig_node_indices: np.take(self.diagonal_expressible_set, np.array(orig_node_indices) - self.latent_count),
+                map(lambda orig_node_indices: np.take(self.canonical_world, np.array(orig_node_indices) - self.latent_count),
                     screening[:-1]))
             symops = np.array([self.inflation_group_generators[U3][0] for U3 in U3s]) # Now 2d array
             Zs_new_world = np.take(reduce(np.take, symops), Zs)
@@ -374,6 +423,13 @@ class InflatedGraph(LatentVariableGraph):
 
 
 class ObservationalData:
+
+    @staticmethod
+    def MixedCardinalityBaseConversion(cardinality, string):
+        card = np.array([cardinality[i] ** (len(cardinality) - (i + 1)) for i in range(len(cardinality))])
+        str_to_array = np.array([int(i) for i in string])
+        return np.dot(card, str_to_array)
+
     def __init__(self, rawdata, cardinality):
         
         if isinstance(rawdata, int):  # When only the number of observed variables is specified, but no actual data, we fake it.
@@ -407,7 +463,7 @@ class ObservationalData:
                 self.observed_count = len(rawdata[0])
                 self.original_card_product=np.prod(cardinality)
                 data = np.zeros(self.original_card_product)
-                data[list(map(lambda s: MixedCardinalityBaseConversion(cardinality, s),rawdata))] = 1/numevents
+                data[list(map(lambda s: self.MixedCardinalityBaseConversion(cardinality, s), rawdata))] = 1/numevents
                 self.data_flat=data
                 self.size = self.data_flat.size
                 assert self.observed_count==len(cardinality), 'Cardinality specification does not match the number of observed variables.' 
@@ -440,14 +496,7 @@ class InflationProblem(InflatedGraph, ObservationalData):
     def __init__(self,rawgraph,rawdata,card,inflation_order):
         InflatedGraph.__init__(self, rawgraph,inflation_order)
         ObservationalData.__init__(self,rawdata,card)
-        
-        """
-        self.inflated_offdiagonal_expressible_sets=InflatedGraph(rawgraph,inflation_order).inflated_offdiagonal_expressible_sets
-        self.inflation_group_elements=InflatedGraph(rawgraph,inflation_order).inflation_group_elements
-        self.inflated_determinism_checks=InflatedGraph(rawgraph,inflation_order).inflated_determinism_checks
-        self.diagonal_expressible_set=
-        """
-        
+
         self.cardinality = self.cardinalities_array[0] #To be deprecated on upgrade to mixed cardinality
 
         self.original_cardinalities_array = self.cardinalities_array
@@ -490,19 +539,31 @@ class InflationProblem(InflatedGraph, ObservationalData):
 
     @cached_property
     def EncodedMonomialToRow(self):  # Cached in memory, as this function is called by both inflation matrix and inflation vector construction.
-        # monomial_count = self.inflated_cardinalities_array.take(self.diagonal_expressible_set).prod()
-        monomial_count = int(self.original_cardinality_product ** self.min_inflation_order)
-        permutation_count = int(np.math.factorial(self.min_inflation_order))
-        MonomialIntegers = np.arange(0, monomial_count, 1, np.uint)
-        new_shape = np.full(self.min_inflation_order, self.original_card_product)
-        MonomialIntegersPermutations = np.empty([permutation_count, monomial_count], np.uint)
-        IndexPermutations = list(permutations(np.arange(self.min_inflation_order)))
-        MonomialIntegersPermutations[0] = MonomialIntegers
-        MonomialIntegers = MonomialIntegers.reshape(new_shape)
-        for i in np.arange(1, permutation_count):
-            MonomialIntegersPermutations[i] = np.transpose(MonomialIntegers, IndexPermutations[i]).flat
-        return PositionIndex(np.amin(
-            MonomialIntegersPermutations, axis=0))
+        shape_of_eset = self.inflated_cardinalities_array.take(self.diagonal_expressible_set)
+        size_of_eset = shape_of_eset.prod()
+        MonomialIntegers = np.arange(size_of_eset).reshape(shape_of_eset)
+        #print(MonomialIntegers.shape)
+        #print(np.array(list(self.diagonal_expressible_set_symmetry_group)))
+        for index_permutation in self.diagonal_expressible_set_symmetry_group:
+            np.minimum(
+                MonomialIntegers,
+                MonomialIntegers.transpose(index_permutation),
+                out = MonomialIntegers)
+        return PositionIndex(MonomialIntegers.ravel())
+
+        # monomial_count = int(self.original_cardinality_product ** self.min_inflation_order)
+        # permutation_count = int(np.math.factorial(self.min_inflation_order))
+        #
+        # MonomialIntegers = np.arange(0, monomial_count, 1, np.uint)
+        # new_shape = np.full(self.min_inflation_order, self.original_card_product)
+        # MonomialIntegersPermutations = np.empty([permutation_count, monomial_count], np.uint)
+        # IndexPermutations = list(permutations(np.arange(self.min_inflation_order)))
+        # MonomialIntegersPermutations[0] = MonomialIntegers
+        # MonomialIntegers = MonomialIntegers.reshape(new_shape)
+        # for i in np.arange(1, permutation_count):
+        #     MonomialIntegersPermutations[i] = np.transpose(MonomialIntegers, IndexPermutations[i]).flat
+        # return PositionIndex(np.amin(
+        #     MonomialIntegersPermutations, axis=0))
  
     def EncodedColumnToMonomial(self,expr_set):
         # Can be used for off-diagonal expressible sets with no adjustment!
@@ -581,20 +642,46 @@ class InflationProblem(InflatedGraph, ObservationalData):
             return SparseMatrixFromRowsPerColumn(self.EncodedA_ExtraExpressible())
         else:
             return SparseMatrixFromRowsPerColumn(self.EncodedA())
+
+
+    def _numeric_marginal(self, inflation_variables_indices):
+        return np.einsum(self.data_reshaped, np.arange(self.observed_count), self.from_inflation_indices.take(inflation_variables_indices))
+    def _numeric_marginal_product(self, lists_of_inflation_variables_indices):
+        einsum_input = list(chain.from_iterable(((self._numeric_marginal(inflation_variables_indices), inflation_variables_indices)
+                            for inflation_variables_indices
+                            in lists_of_inflation_variables_indices)))
+        einsum_input.append(list(chain.from_iterable(lists_of_inflation_variables_indices)))
+        #print(einsum_input)
+        #print(list(map(lambda a: a.shape,einsum_input)))
+        return np.einsum(*einsum_input).ravel()
+
+    def _symbolic_marginal(self,inflation_variables_indices):
+        original_variables_indices = self.from_inflation_indices.take(inflation_variables_indices)
+        names = np.take(self.names[self.latent_count:], original_variables_indices)
+        names_part = 'P[' + ''.join(names.tolist()) + ']('
+        newshape = tuple(self.inflated_cardinalities_array.take(inflation_variables_indices))
+        return [names_part + ''.join([''.join(str(i)) for i in multi_index]) +  ')' for multi_index in np.ndindex(newshape)]
+    def _symbolic_marginal_product(self, lists_of_inflation_variables_indices):
+        return list(starmap(operator.concat,product(*map(self._symbolic_marginal, lists_of_inflation_variables_indices))))
+
     
     def Numeric_and_Symbolic_b_block_DIAGONAL(self):
-        s, idx, counts = np.unique(self.EncodedMonomialToRow(len(self.data_flat)), return_index=True, return_counts=True)
+        s, idx, counts = np.unique(self.EncodedMonomialToRow, return_index=True, return_counts=True)
         pre_numeric_b = np.array(self.data_flat)
-        numeric_b = pre_numeric_b.copy()
-        pre_symbolic_b = np.array(['P(' + ''.join([''.join(str(i)) for i in idx]) + ')' for idx in
-                       np.ndindex(self.original_cardinalities_tuple)])
-        symbolic_b = pre_symbolic_b.copy()
-        for i in range(1, self.min_inflation_order):
-            numeric_b = np.kron(pre_numeric_b, numeric_b)
-            symbolic_b = [s1+s2 for s1 in pre_symbolic_b for s2 in symbolic_b]
+        # numeric_b = pre_numeric_b.copy()
+        # pre_symbolic_b = np.array(['P(' + ''.join([''.join(str(i)) for i in idx]) + ')' for idx in
+        #                np.ndindex(self.original_cardinalities_tuple)])
+        # symbolic_b = pre_symbolic_b.copy()
+        # for i in range(1, self.min_inflation_order):
+        #     numeric_b = np.kron(pre_numeric_b, numeric_b)
+        #     symbolic_b = [s1+s2 for s1 in pre_symbolic_b for s2 in symbolic_b]
+
+        numeric_b = self._numeric_marginal_product(self.partitioned_expressible_set)
+        symbolic_b = self._symbolic_marginal_product(self.partitioned_expressible_set)
+
         numeric_b_block = np.multiply(numeric_b.take(idx), counts)
         string_multipliers = ('' if i == 1 else str(i)+'*' for i in counts)
-        symbolic_b_block = [s1+s2 for s1,s2 in zip(string_multipliers, np.take(symbolic_b,idx))]
+        symbolic_b_block = [s1+s2 for s1,s2 in zip(string_multipliers, np.take(symbolic_b, idx))]
         return numeric_b_block, symbolic_b_block
     
     def Numeric_and_Symbolic_b_block_NON_AI_EXPR(self,eset):
@@ -728,7 +815,7 @@ class InflationLP(InflationProblem):
             #yt=np.rint(y*n)
             #yt=yt*n
             #yt=yt/n
-            y2 = np.rint(n * y2 / scale).astype(np.int)
+            y2 = np.rint(n * y / scale).astype(np.int)
             #y2=y2/(n*10)
             #if n > 10**6:
              #   y2=y
@@ -848,7 +935,7 @@ if __name__ == '__main__':
     BiconfoundingInstrumental = Graph.Formula("U1->A,U2->B:C,U3->B:D,A->B,B->C:D")
     TriangleGraph = Graph.Formula("X->A,Y->A:B,Z->B:C,X->C")
     [
-        InflatedGraph(g,2).print_assessment() for g in
+        InflatedGraph(g,[2,3,3]).print_assessment() for g in
      (TriangleGraph, Evans14a, Evans14b, Evans14c, IceCreamGraph, BiconfoundingInstrumental)]
 
 
