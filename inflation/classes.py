@@ -216,8 +216,10 @@ class InflatedGraph(LatentVariableGraph):
         if isinstance(inflation_order, int):
             self.inflations_orders = np.full(self.latent_count, inflation_order)
         else:  # When inflation_order is specified as a list
-            assert isinstance(inflation_order,
-                              (list, tuple, np.ndarray)), 'Inflation orders not given as list of integers.'
+            if not isinstance(inflation_order, (list, tuple, np.ndarray)):
+                raise TypeError("Inflation orders not given as list of integers.")
+        #assert isinstance(inflation_order,
+                              #(list, tuple, np.ndarray)), 'Inflation orders not given as list of integers.'
             self.inflations_orders = np.array(inflation_order)
         self.min_inflation_order = self.inflations_orders.min()  # Should be deprecated after upgrade to diagonal expressible set
         self.max_inflation_order = self.inflations_orders.max()
@@ -253,15 +255,13 @@ class InflatedGraph(LatentVariableGraph):
             in zip(self.inflation_minima, self.inflation_depths, self.offsets)]
         # print(self._canonical_pos)
         self.canonical_world = np.fromiter((pos[0] for pos in self._canonical_pos), np.int)
-<<<<<<< Updated upstream:inflation/classes.py
         print(self._canonical_pos)
         print(self.canonical_world)
         #self.expressible_set_variants = list(permutations(zip_longest(*self._canonical_pos, fillvalue=-1)))
         #print(self.expressible_set_variants)
-=======
+
         # self.expressible_set_variants = list(permutations(zip_longest(*self._canonical_pos, fillvalue=-1)))
         # print(self.expressible_set_variants)
->>>>>>> Stashed changes:inflation/classestest.py
         # self.expressible_set_variants = np.array([np.hstack(np.vstack(perm).T) for perm in permutations(zip(*zip_longest(*self._canonical_pos, fillvalue=-1)))])
         # expressible_set_variants_filter = np.add(self.expressible_set_variants,1).astype(np.bool)
         # print(expressible_set_variants_filter == np.atleast_2d(expressible_set_variants_filter[0]))
@@ -452,13 +452,17 @@ class ObservationalData:
                 self.size = self.data_flat.size
                 self.cardinalities_array = np.full(self.observed_count, cardinality)
             else:  # When cardinalities are specified as a list
-                assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
+                if not isinstance(cardinality, (list, tuple, np.ndarray)):
+                    raise TypeError("Cardinality not given as list of integers.")
+                #assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
                 self.observed_count = rawdata
                 self.original_card_product = np.prod(cardinality)
                 self.data_flat = np.full(self.original_card_product, 1.0 / self.original_card_product)
                 self.size = self.data_flat.size
-                assert self.observed_count == len(
-                    cardinality), 'Cardinality specification does not match the number of observed variables.'
+                if self.observed_count !=len(cardinality):
+                    raise ValueError("Cardinality specification does not match the number of observed variables.")
+                #assert self.observed_count == len(
+                    #cardinality), 'Cardinality specification does not match the number of observed variables.'
                 self.cardinalities_array = np.array(cardinality)
 
         elif isinstance(rawdata[0],
@@ -473,15 +477,19 @@ class ObservationalData:
                 self.size = self.data_flat.size
                 self.cardinalities_array = np.full(self.observed_count, cardinality)
             else:  # When cardinalities are specified as a list
-                assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
+                if not isinstance(cardinality, (list, tuple, np.ndarray)):
+                    raise TypeError("Cardinality not given as list of integers.")
+                #assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
                 self.observed_count = len(rawdata[0])
                 self.original_card_product = np.prod(cardinality)
                 data = np.zeros(self.original_card_product)
                 data[list(map(lambda s: self.MixedCardinalityBaseConversion(cardinality, s), rawdata))] = 1 / numevents
                 self.data_flat = data
                 self.size = self.data_flat.size
-                assert self.observed_count == len(
-                    cardinality), 'Cardinality specification does not match the number of observed variables.'
+                if self.observed_count !=len(cardinality):
+                    raise ValueError("Cardinality specification does not match the number of observed variables.")
+                #assert self.observed_count == len(
+                 #   cardinality), 'Cardinality specification does not match the number of observed variables.'
                 self.cardinalities_array = np.array(cardinality)
 
         else:
@@ -495,13 +503,19 @@ class ObservationalData:
             if isinstance(cardinality, int):  # When cardinality is specified as an integer
                 self.observed_count = np.rint(np.divide(np.log(self.size), np.log(cardinality))).astype(np.int)
                 self.original_card_product = cardinality ** self.observed_count
-                assert self.size == self.original_card_product, 'Cardinality of individual variable could not be inferred.'
+                if self.observed_count !=len(cardinality):
+                    raise ValueError("Cardinality of individual variable could not be inferred.")
+                #assert self.size == self.original_card_product, 'Cardinality of individual variable could not be inferred.'
                 self.cardinalities_array = np.full(self.observed_count, cardinality)
             else:  # When cardinalities are specified as a list
-                assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
+                if not isinstance(cardinality, (list, tuple, np.ndarray)):
+                    raise TypeError("Cardinality not given as list of integers.")
+                #assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
                 self.observed_count = len(cardinality)
                 self.original_card_product = np.prod(cardinality)
-                assert self.size == self.original_card_product, 'Cardinality specification does not match the data.'
+                if self.observed_count !=len(cardinality):
+                    raise ValueError("Cardinality specification does not match the data.")
+                #assert self.size == self.original_card_product, 'Cardinality specification does not match the data.'
                 self.cardinalities_array = np.array(cardinality)
         self.cardinalities_tuple = tuple(self.cardinalities_array.tolist())
         self.data_reshaped = np.reshape(self.data_flat, self.cardinalities_tuple)
@@ -801,9 +815,12 @@ class InflationLP(InflationProblem):
 
         self.numeric_b, self.symbolic_b = self.numeric_and_symbolic_b(extra_expressible=extra_ex)
         self.InfMat = self.InflationMatrix(extra_expressible=extra_ex)
-
-        assert (solver == 'moseklp') or (solver == 'CVXOPT') or (
-                    solver == 'mosekAUTO'), "The accepted solvers are: 'moseklp', 'CVXOPT' and 'mosekAUTO'"
+        
+        if not ((solver == 'moseklp') or (solver == 'CVXOPT') or (solver == 'mosekAUTO')):
+            raise TypeError("The accepted solvers are: 'moseklp', 'CVXOPT' and 'mosekAUTO'")
+        
+        #assert (solver == 'moseklp') or (solver == 'CVXOPT') or (
+         #           solver == 'mosekAUTO'), "The accepted solvers are: 'moseklp', 'CVXOPT' and 'mosekAUTO'"
 
         if solver == 'moseklp':
 
@@ -832,7 +849,9 @@ class InflationLP(InflationProblem):
     def ValidityCheck(self, y, SpMatrix):
         # Smatrix=SpMatrix.toarray()    #DO NOT LEAVE SPARSITY!!
         checkY = csr_matrix(y.ravel()).dot(SpMatrix)
-        assert checkY.min() >= -10 ** 4, 'The rounding of y has failed: checkY.min()=' + str(checkY.min()) + ''
+        if checkY.min() >= -10**4:
+            raise RuntimeError('The rounding of y has failed: checkY.min()='+str(checkY.min())+'')
+        #assert checkY.min() >= -10 ** 4, 'The rounding of y has failed: checkY.min()=' + str(checkY.min()) + ''
         return checkY.min() >= -10 ** -10
 
     def IntelligentRound(self, y, SpMatrix):
