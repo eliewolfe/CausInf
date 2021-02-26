@@ -87,6 +87,9 @@ class LatentVariableGraph:
         self.names = verts["name"]
         self.latent_indices = np.arange(self.latent_count).tolist()
         self.observed_indices = np.arange(self.latent_count, self.observed_count + self.latent_count).tolist()
+        self.observed_names = self.names[self.latent_count:]
+        self.latent_names = self.names[:self.latent_count]
+
         # self.latent_variables = self.vs[self.latent_indices]
         # self.observed_variables = self.vs[self.observed_indices]
 
@@ -207,6 +210,8 @@ class LatentVariableGraph:
             print('\u2500' * 80 + '\n')
 
 
+
+
 class InflatedGraph(LatentVariableGraph):
 
     def __init__(self, rawgraph, inflation_order):
@@ -243,6 +248,7 @@ class InflatedGraph(LatentVariableGraph):
         self.inflation_depths = np.fromiter(map(len, self._latent_ancestors_cardinalities_of), np.int)
 
         self.from_inflation_indices = np.repeat(np.arange(self.observed_count), self.inflation_copies)
+        self.inflated_observed_names = np.repeat(np.arange(self.observed_count), self.inflated_observed_names)
 
         # self.inflated_observed_count = self.inflation_copies.sum()
         accumulated = np.add.accumulate(self.inflation_copies)
@@ -431,6 +437,31 @@ class InflatedGraph(LatentVariableGraph):
             print(nonai_exp_set)
         print('\u2500' * 80 + '\n')
 
+class ExpressibleSet:
+    #WORK IN PROGRESS
+    def __init__self(self, partitioned_eset_indices, composition_rule, inflated_names):
+        self.partitioned_eset_indices = partitioned_eset_indices
+        self.composition_rule = composition_rule
+        self.inflated_names = inflated_names
+
+        self.posts = [str(rule).replace('1','').replace('-1','^(-1)') for rule in  self.composition_rule]
+
+        self.symbolic_wrappers = ['P[' + ''.join(inflated_names[sub_eset].tolist()) + ']({})'+post for sub_eset, post in zip(self.partitioned_eset_indices,self.posts)]
+
+
+class InflationGraph_WithCardinalities(InflatedGraph):
+    # WORK IN PROGRESS
+    # The
+    def __init__(self, rawgraph, inflation_order, cardinalities_list):
+        InflatedGraph.__init__(self, rawgraph, inflation_order)
+
+        self.inflated_cardinalities_array = np.repeat(cardinalities_list, self.inflation_copies)
+        self.inflated_cardinalities_tuple = tuple(self.inflated_cardinalities_array.tolist())
+        self.column_count = self.inflated_cardinalities_array.prod()
+        self.shaped_column_integers = np.arange(self.column_count).reshape(self.inflated_cardinalities_tuple)
+
+
+
 
 class ObservationalData:
 
@@ -559,12 +590,6 @@ class InflationProblem(InflatedGraph, ObservationalData):
 
     @cached_property
     def ValidColumnOrbits(self):
-        # group_order = len(self.inflation_group_elements)
-        # AMatrix = np.empty([group_order, self.column_count], np.int)
-        # AMatrix[0] = self.shaped_column_integers_marked.flat  # Assuming first group element is the identity
-        # for i in np.arange(1, group_order):
-        #     AMatrix[i] = np.transpose(self.shaped_column_integers_marked, self.inflation_group_elements[i]).flat
-        # minima = np.amin(AMatrix, axis=0)
         AMatrix = orbits_of_object_under_group_action(
             self.shaped_column_integers_marked,
             self.inflation_group_elements).T
