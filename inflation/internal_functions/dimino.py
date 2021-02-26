@@ -139,11 +139,19 @@ def orbits_of_implicit_tensor_Ulu_style(dims, group):
 
 
 if __name__ == '__main__':
-    dims = (3,3,3,3)
+    dims = (4,4,4,4,4,4,4,4,4,4,4,4)
     test_tensor = indexed_tensor(dims)
-    group_generators = np.array([[1,2,3,0]])
-    group_elements = dimino_wolfe(group_generators)
+    group_generators = np.array([[ 2,  3,  0,  1,  4,  5,  6,  7, 10, 11,  8,  9], [ 1,  0,  3,  2,  6,  7,  4,  5,  8,  9, 10, 11], [ 0,  1,  2,  3,  5,  4,  7,  6,  9,  8, 11, 10]])
+    group_elements=dimino_wolfe(group_generators)
+    import timeit
+    
+    print(timeit.timeit("lambda: orbits_of_implicit_tensor(dims, group_elements)"))
     #print(group_elements)
     #tensor = symmetrize_tensor(test_tensor, group_elements, skip=1)
     #print(test_tensor.ravel())
-    print(orbits_of_implicit_tensor_Ulu_style(dims, group_elements))
+    print("----------------------------------------")
+    print(timeit.timeit("lambda: orbits_of_implicit_tensor_Ulu_style(dims, group_elements)"))
+    
+    #print(group_generators)
+    print(orbits_of_implicit_tensor(dims, group_elements))
+    

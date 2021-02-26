@@ -24,12 +24,12 @@ if __name__ == '__main__':
     import pathlib
 
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+from internal_functions.inequality_internals import *
 from internal_functions.dimino import dimino_wolfe
 from internal_functions.utilities import MoveToFront, PositionIndex, MoveToBack, SparseMatrixFromRowsPerColumn
 from linear_program_options.moseklp import InfeasibilityCertificate
 from linear_program_options.mosekinfeas import InfeasibilityCertificateAUTO
 from linear_program_options.inflationlp import InflationLP
-import sympy as sy
 import operator
 
 
@@ -255,8 +255,7 @@ class InflatedGraph(LatentVariableGraph):
             in zip(self.inflation_minima, self.inflation_depths, self.offsets)]
         # print(self._canonical_pos)
         self.canonical_world = np.fromiter((pos[0] for pos in self._canonical_pos), np.int)
-        print(self._canonical_pos)
-        print(self.canonical_world)
+
         #self.expressible_set_variants = list(permutations(zip_longest(*self._canonical_pos, fillvalue=-1)))
         #print(self.expressible_set_variants)
 
@@ -372,7 +371,7 @@ class InflatedGraph(LatentVariableGraph):
         return np.array(dimino_wolfe(
             np.vstack(self.inflation_group_generators)))  # Should be ok with different number of generators per latent
         # return np.array(dimino_wolfe(self.inflation_group_generators.reshape((-1, self.inflated_observed_count))))
-
+    
     def _InflateOneDeterminismAssumption(self):
         for screening in self.determinism_checks:
             U1s = screening[0]
@@ -818,9 +817,6 @@ class InflationLP(InflationProblem):
         
         if not ((solver == 'moseklp') or (solver == 'CVXOPT') or (solver == 'mosekAUTO')):
             raise TypeError("The accepted solvers are: 'moseklp', 'CVXOPT' and 'mosekAUTO'")
-        
-        #assert (solver == 'moseklp') or (solver == 'CVXOPT') or (
-         #           solver == 'mosekAUTO'), "The accepted solvers are: 'moseklp', 'CVXOPT' and 'mosekAUTO'"
 
         if solver == 'moseklp':
 
@@ -846,69 +842,53 @@ class InflationLP(InflationProblem):
             print('Distribution Compatibility Status: COMPATIBLE')
         return IncompTest
 
-    def ValidityCheck(self, y, SpMatrix):
-        # Smatrix=SpMatrix.toarray()    #DO NOT LEAVE SPARSITY!!
-        checkY = csr_matrix(y.ravel()).dot(SpMatrix)
-        if checkY.min() >= -10**4:
-            raise RuntimeError('The rounding of y has failed: checkY.min()='+str(checkY.min())+'')
-        #assert checkY.min() >= -10 ** 4, 'The rounding of y has failed: checkY.min()=' + str(checkY.min()) + ''
-        return checkY.min() >= -10 ** -10
 
-    def IntelligentRound(self, y, SpMatrix):
-        scale = np.abs(np.amin(y))
-        n = 1
-        # yt=np.rint(y*n)
-        # yt=y*n
-        y2 = np.rint(n * y / scale).astype(np.int)  # Can I do this with sparse y?
-
-        while not self.ValidityCheck(y2, SpMatrix):
-            n = n * (n + 1)
-            # yt=np.rint(y*n)
-            # yt=yt*n
-            # yt=yt/n
-            y2 = np.rint(n * y / scale).astype(np.int)
-            # y2=y2/(n*10)
-            # if n > 10**6:
-            #   y2=y
-            #  print("RoundingError: Unable to round y")
-        # yt=np.rint(yt*100)
-
-        return y2
-
-    def Inequality(self):
+    def Inequality(self,output=[]):
         # Modified Feb 2, 2021 to pass B_symbolic as an argument for Inequality
+        # Modified Feb 25, 2021 to accept custom output options from user
         if self.WitnessDataTest(self.yRaw):
-            y = self.IntelligentRound(self.yRaw, self.InfMat)
-            # print('Now to make things human readable...')
-            indextally = defaultdict(list)
-            [indextally[str(val)].append(i) for i, val in enumerate(y) if val != 0]
-            symboltally = defaultdict(list)
-            for i, vals in indextally.items():
-                symboltally[i] = np.take(self.symbolic_b, vals).tolist()
+            y = IntelligentRound(self.yRaw, self.InfMat)
+            
+            if output==[]:
+            
+                idxtally=indextally(y)
+                symtally=symboltally(indextally(y),self.symbolic_b)
+                ineq_as_str=inequality_as_string(y,self.symbolic_b)
 
-            final_ineq_WITHOUT_ZEROS = np.multiply(y[np.nonzero(y)],
-                                                   sy.symbols(' '.join(np.take(self.symbolic_b, np.nonzero(y))[0])))
+                print("Writing to file: 'inequality_output.json'")
 
-            Inequality_as_string = '0<=' + "+".join([str(term) for term in final_ineq_WITHOUT_ZEROS]).replace('*P',
-                                                                                                              'P').replace(
-                '2P', 'P')
-            Inequality_as_string = Inequality_as_string.replace('+-', '-')
-
-            print("Writing to file: 'inequality_output.json'")
-
-            returntouser = {
-                # 'Order of variables': names,
-                'Raw rolver output': self.yRaw.tolist(),
-                'Inequality as string': Inequality_as_string,
-                'Coefficients grouped by index': indextally,
-                'Coefficients grouped by symbol': symboltally,
-                # 'b_vector_position': idx.tolist(),
-                'Clean solver output': y.tolist()  # ,
-                # 'Symbolic association': symbtostring.tolist()
-            }
-            f = open('inequality_output.json', 'w')
-            print(json.dumps(returntouser), file=f)
-            f.close()
+                returntouser = {
+                    'Raw solver output': self.yRaw.tolist(),
+                    'Inequality as string': ineq_as_str,
+                    'Coefficients grouped by index': idxtally,
+                    'Coefficients grouped by symbol': symtally,
+                    'Clean solver output': y.tolist()
+                }
+                f = open('inequality_output.json', 'w')
+                print(json.dumps(returntouser), file=f)
+                f.close()
+                
+            else:
+                returntouser={}
+                
+                if 'Raw solver output' in output:
+                    returntouser['Raw solver output']=self.yRaw.tolist()
+                if 'Inequality as string' in output:
+                    ineq_as_str=inequality_as_string(y,self.symbolic_b)
+                    returntouser['Inequality as string']=ineq_as_str
+                if 'Coefficients grouped by index' in output:
+                    idxtally=indextally(y)
+                    returntouser['Coefficients grouped by index']=idxtally
+                if 'Coefficients grouped by symbol' in output:
+                    symtally=symboltally(indextally(y),self.symbolic_b)
+                    returntouser['Coefficients grouped by symbol']=symtally
+                if 'Clean solver output' in output:
+                    returntouser['Clean solver output']=y.tolist()
+                
+                f = open('inequality_output.json', 'w')
+                print(json.dumps(returntouser), file=f)
+                f.close()
+                
             return returntouser
         else:
             return print('Compatibility Error: The input distribution is compatible with given inflation order test.')
@@ -954,28 +934,6 @@ class SupportCertificate(InflationProblem):
         else:
 
             print("Not Supported")
-
-
-# The following is commented out for the later application of mixed cardinality
-# def MarkInvalidStrategies(self,cards, num_var, det_assumptions):
-#   ColumnIntegers = GenShapedColumnIntegers(self.cardinalities_tuple)
-#  for detrule in det_assumptions:
-#     initialtranspose = MoveToFront(num_var, np.hstack(tuple(detrule)))
-#    inversetranspose = np.argsort(initialtranspose)
-#   parentsdimension1=1
-#  for var in detrule[0]:
-#     parentsdimension1=parentsdimension1*cards[var]
-# parentsdimension2=1
-# for var in detrule[1]:
-#    parentsdimension2=parentsdimension2*cards[var]
-# intermediateshape = (parentsdimension1, parentsdimension2, cards[detrule[2]], cards[detrule[3]], -1);
-# ColumnIntegers = ColumnIntegers.transpose(tuple(initialtranspose)).reshape(intermediateshape)
-# for i in np.arange(min(parentsdimension1,parentsdimension2)):
-#    for j in np.arange(cards[detrule[2]] - 1):
-#       for k in np.arange(j + 1, cards[detrule[3]]):
-#          ColumnIntegers[i, i, j, k] = -1
-# ColumnIntegers = ColumnIntegers.reshape(cards).transpose(tuple(inversetranspose))
-# return ColumnIntegers
 
 
 if __name__ == '__main__':

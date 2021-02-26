@@ -24,7 +24,7 @@ if __name__ == '__main__':
     import sys
     import pathlib
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from inflation.classestest import InflationLP,InflatedGraph
+from inflation.classes import InflationLP,InflatedGraph
     
 def ListOfBitStringsToListOfIntegers(list_of_bitstrings):
     return list(map(lambda s: int(s,4),list_of_bitstrings))
@@ -92,7 +92,7 @@ solver='moseklp'
 #print(InflatedGraph(rawgraph,[2,1,2]).inflation_group_generators)
 InflatedGraph(rawgraph,inflation_order).print_assessment()
 
-Solution=InflationLP(rawgraph, rawdata, card, inflation_order,extra_ex,solver).Inequality()
+Solution=InflationLP(rawgraph, rawdata, card, inflation_order,extra_ex,solver).Inequality(['Raw solver output','Inequality as string','Clean solver output'])
 
 
 
