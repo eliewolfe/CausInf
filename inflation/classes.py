@@ -25,7 +25,7 @@ if __name__ == '__main__':
 
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from internal_functions.inequality_internals import *
-from internal_functions.dimino import dimino_wolfe
+from internal_functions.groups import dimino_wolfe, minimize_object_under_group_action, orbits_of_object_under_group_action
 from internal_functions.utilities import MoveToFront, PositionIndex, MoveToBack, SparseMatrixFromRowsPerColumn
 from linear_program_options.moseklp import InfeasibilityCertificate
 from linear_program_options.mosekinfeas import InfeasibilityCertificateAUTO
@@ -559,13 +559,17 @@ class InflationProblem(InflatedGraph, ObservationalData):
 
     @cached_property
     def ValidColumnOrbits(self):
-        group_order = len(self.inflation_group_elements)
-        AMatrix = np.empty([group_order, self.column_count], np.int)
-        AMatrix[0] = self.shaped_column_integers_marked.flat  # Assuming first group element is the identity
-        for i in np.arange(1, group_order):
-            AMatrix[i] = np.transpose(self.shaped_column_integers_marked, self.inflation_group_elements[i]).flat
-        minima = np.amin(AMatrix, axis=0)
-        AMatrix = np.compress(minima == np.abs(AMatrix[0]), AMatrix, axis=1)
+        # group_order = len(self.inflation_group_elements)
+        # AMatrix = np.empty([group_order, self.column_count], np.int)
+        # AMatrix[0] = self.shaped_column_integers_marked.flat  # Assuming first group element is the identity
+        # for i in np.arange(1, group_order):
+        #     AMatrix[i] = np.transpose(self.shaped_column_integers_marked, self.inflation_group_elements[i]).flat
+        # minima = np.amin(AMatrix, axis=0)
+        AMatrix = orbits_of_object_under_group_action(
+            self.shaped_column_integers_marked,
+            self.inflation_group_elements).T
+        np.compress(AMatrix[0]>=0, AMatrix, axis=1)
+        #AMatrix = np.compress(minima == np.abs(AMatrix[0]), AMatrix, axis=1)
         return AMatrix
 
     @cached_property
@@ -574,13 +578,16 @@ class InflationProblem(InflatedGraph, ObservationalData):
         shape_of_eset = self.inflated_cardinalities_array.take(self.diagonal_expressible_set)
         size_of_eset = shape_of_eset.prod()
         MonomialIntegers = np.arange(size_of_eset).reshape(shape_of_eset)
+        minimize_object_under_group_action(
+            MonomialIntegers,
+            self.diagonal_expressible_set_symmetry_group)
         # print(MonomialIntegers.shape)
         # print(np.array(list(self.diagonal_expressible_set_symmetry_group)))
-        for index_permutation in self.diagonal_expressible_set_symmetry_group:
-            np.minimum(
-                MonomialIntegers,
-                MonomialIntegers.transpose(index_permutation),
-                out=MonomialIntegers)
+        # for index_permutation in self.diagonal_expressible_set_symmetry_group:
+        #     np.minimum(
+        #         MonomialIntegers,
+        #         MonomialIntegers.transpose(index_permutation),
+        #         out=MonomialIntegers)
         return PositionIndex(MonomialIntegers.ravel())
 
         # monomial_count = int(self.original_cardinality_product ** self.min_inflation_order)
