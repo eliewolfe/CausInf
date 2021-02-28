@@ -34,7 +34,6 @@ import operator
 
 
 class LatentVariableGraph:
-    # __slots__ = ['g','latent_count','observed_count']
 
     @staticmethod
     def ToRootLexicographicOrdering(g):
@@ -57,7 +56,6 @@ class LatentVariableGraph:
         optimal_nonroot_node_indices = np.take(nonroot_vertices_igraph.indices,
                                                np.argsort(nonroot_vertices_igraph["name"]))
         new_ordering = np.hstack((optimal_root_node_indices, optimal_nonroot_node_indices))
-        # print(np.array_str(np.take(verts["name"],new_ordering)))
         return g.permute_vertices(np.argsort(new_ordering).tolist())
 
     def __init__(self, rawgraph):
@@ -87,19 +85,10 @@ class LatentVariableGraph:
         self.names = verts["name"]
         self.latent_indices = np.arange(self.latent_count).tolist()
         self.observed_indices = np.arange(self.latent_count, self.observed_count + self.latent_count).tolist()
-        # self.latent_variables = self.vs[self.latent_indices]
-        # self.observed_variables = self.vs[self.observed_indices]
-
-    # def Root_Subsets(self,v): #DEPRACATED
-    #     "v is presumed to be a iGraph vertex object."
-    #     screenable_roots = np.setdiff1d(v["roots_of"], v["parents"])
-    #     return [self.verts[subroots] for r in np.arange(1, screenable_roots.size + 1) for subroots in
-    #             combinations(screenable_roots, r)]
 
     def RootIndices_Subsets(self, v):
         "v is presumed to be an integer specifying some node."
         screenable_roots = np.setdiff1d(self.roots_of[v], self.parents_of[v])
-        # return [subroots for r in np.arange(1, screenable_roots.size + 1) for subroots in combinations(screenable_roots, r)]
         return chain.from_iterable(combinations(screenable_roots, r) for r in np.arange(1, screenable_roots.size + 1))
 
     def _identify_determinism_check(self, root_indices, observed_index):
@@ -112,8 +101,6 @@ class LatentVariableGraph:
         list_extract_and_union = lambda list_of_lists, indices: set().union(
             chain.from_iterable(list_of_lists[v] for v in indices))
         parents_of_observed = set(self.parents_of[observed_index])
-        # descendants_of_roots = [self.descendants_of[v] for v in root_indices]
-        # descendants_of_roots = set().union(*descendants_of_roots)
         descendants_of_roots = list_extract_and_union(self.descendants_of, root_indices)
         U1s = list(root_indices)
         Y = observed_index
@@ -143,7 +130,6 @@ class LatentVariableGraph:
         for sidx in screeningset:
             screeningset_rest = screeningset.copy()
             screeningset_rest.remove(sidx)
-            # unblocked_path if screeningset_rest.isdisjoint(directed_path)
             # sidx is redundant if there are not ANY unblocked paths.
             if not any(screeningset_rest.isdisjoint(directed_path) for directed_path in
                        self.g.get_all_simple_paths(sidx, to=observed)):
@@ -211,15 +197,12 @@ class InflatedGraph(LatentVariableGraph):
 
     def __init__(self, rawgraph, inflation_order):
         LatentVariableGraph.__init__(self, rawgraph)
-        # self.inflation_order=inflation_order #Now fully deprecated after transition to mixed inflation order!
 
         if isinstance(inflation_order, int):
             self.inflations_orders = np.full(self.latent_count, inflation_order)
         else:  # When inflation_order is specified as a list
             if not isinstance(inflation_order, (list, tuple, np.ndarray)):
                 raise TypeError("Inflation orders not given as list of integers.")
-        #assert isinstance(inflation_order,
-                              #(list, tuple, np.ndarray)), 'Inflation orders not given as list of integers.'
             self.inflations_orders = np.array(inflation_order)
         self.min_inflation_order = self.inflations_orders.min()  # Should be deprecated after upgrade to diagonal expressible set
         self.max_inflation_order = self.inflations_orders.max()
@@ -233,18 +216,14 @@ class InflatedGraph(LatentVariableGraph):
 
         self.root_structure = self.roots_of[self.latent_count:]
 
-        # self.inflation_depths = np.array(list(map(len, self.root_structure))) #Counts how many roots each random variable has. Should be deprecated upon upgrading to mixed inflation order.
-        # self.inflation_copies = self.inflations_orders ** self.inflation_depths #Counts how many times each random variable is copied.
         self._latent_ancestors_cardinalities_of = [self.inflations_orders.take(latent_parents) for latent_parents in
                                                    self.root_structure]
-        # self.inflation_copies = np.fromiter((self.inflations_orders.take(latent_parents).prod() for latent_parents in self.root_structure), np.int)
         self.inflation_copies = np.fromiter(map(np.prod, self._latent_ancestors_cardinalities_of), np.int)
         self.inflation_minima = np.fromiter(map(np.amin, self._latent_ancestors_cardinalities_of), np.int)
         self.inflation_depths = np.fromiter(map(len, self._latent_ancestors_cardinalities_of), np.int)
 
         self.from_inflation_indices = np.repeat(np.arange(self.observed_count), self.inflation_copies)
 
-        # self.inflated_observed_count = self.inflation_copies.sum()
         accumulated = np.add.accumulate(self.inflation_copies)
         self.inflated_observed_count = accumulated[-1]
         
@@ -253,23 +232,7 @@ class InflatedGraph(LatentVariableGraph):
             np.outer(inflation_minimum ** np.arange(inflation_depth), np.arange(inflation_minimum)).sum(axis=0) + offset
             for inflation_minimum, inflation_depth, offset
             in zip(self.inflation_minima, self.inflation_depths, self.offsets)]
-        # print(self._canonical_pos)
         self.canonical_world = np.fromiter((pos[0] for pos in self._canonical_pos), np.int)
-
-        #self.expressible_set_variants = list(permutations(zip_longest(*self._canonical_pos, fillvalue=-1)))
-        #print(self.expressible_set_variants)
-
-        # self.expressible_set_variants = list(permutations(zip_longest(*self._canonical_pos, fillvalue=-1)))
-        # print(self.expressible_set_variants)
-        # self.expressible_set_variants = np.array([np.hstack(np.vstack(perm).T) for perm in permutations(zip(*zip_longest(*self._canonical_pos, fillvalue=-1)))])
-        # expressible_set_variants_filter = np.add(self.expressible_set_variants,1).astype(np.bool)
-        # print(expressible_set_variants_filter == np.atleast_2d(expressible_set_variants_filter[0]))
-        # self.expressible_set_variants = self.expressible_set_variants.compress(
-        #     (expressible_set_variants_filter == np.atleast_2d(expressible_set_variants_filter[0])).all(axis = 1),
-        #     axis = 0)
-        #
-        # self.expressible_set_variants = np.array([eset.compress(np.add(eset,1).astype(np.bool)) for eset in self.expressible_set_variants])
-        # self.diagonal_expressible_set = self.expressible_set_variants[0]
 
     @cached_property
     def expressible_set_variants(self):
@@ -290,50 +253,30 @@ class InflatedGraph(LatentVariableGraph):
         return [np.compress(np.add(part, 1).astype(np.bool), part)
                 for part in zip_longest(*self._canonical_pos, fillvalue=-1)]
 
-    # @staticmethod #Not Needed
-    # def _find_permutation(v1, v2):
-    #     return np.argsort(v1).take(np.argsort(np.argsort(v2)))
-
     @property
     def diagonal_expressible_set_symmetry_group(self):
         core_order = np.argsort(np.argsort(self.diagonal_expressible_set))
         return np.take_along_axis(np.argsort(self.expressible_set_variants[1:], axis=1), np.atleast_2d(core_order),
                                   axis=1)
-        # I know I can do this more efficiently, but I don't care at the moment.
-
+    # I know I can do this more efficiently, but I don't care at the moment.
     # return map(lambda v : np.argsort(v).take(core_order), self.expressible_set_variants[1:])
-
-    # def diagonal_expressible_set(self): #REPLACED, now computed during initialization.
-    # # This min_inflation_order is most pertinent to understanding the ACTION of the diagonal symmetry group on the diagonal expressible set
-    # # The SIZE of the diagonal expressible set, however, can be much larger
-    #     #for latent_parents, offset in zip(self.root_structure,self.offsets):
-    #     canonical_pos = [np.outer(inflation_minimum ** np.arange(inflation_depth), np.arange(inflation_minimum)).sum(axis=0) + offset for \
-    #         inflation_minimum, inflation_depth, offset in zip(self.inflation_minima, self.inflation_depths, self.offsets)]
-    #
-    #         return canonical_pos.T.ravel()
 
     @cached_property
     def inflation_group_generators(self):
-        # Upgrade to mixed inflation order IN PROGRESS (Also need to upgrade determinism and AI to check if n>2!)
+        # Upgrade to mixed inflation order
         globalstrategyflat = list(
             np.add(*stuff) for stuff in zip(list(map(np.arange, self.inflation_copies.tolist())), self.offsets))
-        # print(globalstrategyflat)
         reshapings = np.ones((self.observed_count, self.latent_count), np.uint8)
         contractings = np.zeros((self.observed_count, self.latent_count), np.object)
         for idx, latent_ancestors in enumerate(self.root_structure):
             reshapings[idx][latent_ancestors] = self.inflations_orders[latent_ancestors]
             contractings[idx][latent_ancestors] = np.s_[:]
         reshapings = map(tuple, reshapings)
-        # print(list(reshapings))
         contractings = map(tuple, contractings)
         globalstrategyshaped = list(np.reshape(*stuff) for stuff in zip(globalstrategyflat, reshapings))
         gloablstrategybroadcast = np.stack(np.broadcast_arrays(*globalstrategyshaped), axis=0)
         indices_to_extract = np.hstack(tuple(shaped_elem[contraction].ravel() for shaped_elem, contraction in zip(
             np.arange(gloablstrategybroadcast.size).reshape(gloablstrategybroadcast.shape), contractings)))
-        # print(indices_to_extract)
-        # print("hello")
-        # print(gloablstrategybroadcast)
-        # print(gloablstrategybroadcast.flat[indices_to_extract])
         group_generators = []
         for latent_to_explore, inflation_order_for_U in enumerate(self.inflations_orders):
             generator_count_for_U = np.minimum(inflation_order_for_U, 3) - 1
@@ -347,30 +290,18 @@ class InflatedGraph(LatentVariableGraph):
                     label_permutation[:2] = [1, 0]
                 elif gen_idx == 1:
                     label_permutation = np.roll(label_permutation, 1)
-
-                # global_permutation = gloablstrategybroadcast.transpose(
-                #    tuple(initialtranspose))[label_permutation].transpose(tuple(inversetranspose))
-                # global_permutation = tuple(broadcasted_perm[contraction].ravel() for broadcasted_perm, contraction in zip(
-                #    global_permutation, contractings))
                 group_generators_for_U[gen_idx] = gloablstrategybroadcast.transpose(
                     tuple(initialtranspose))[label_permutation].transpose(
                     tuple(inversetranspose)).flat[indices_to_extract]
-
-                # for broadcasted_perm, contraction, slots in zip(
-                #         global_permutation, contractings, globalstrategyflat):
-                #
-                #     group_generators_for_U[gen_idx, slots] = broadcasted_perm[contraction].ravel()
-            # print(group_generators_for_U)
             group_generators.append(group_generators_for_U)
 
-        # print(group_generators)
         return group_generators
 
     @cached_property
     def inflation_group_elements(self):
         return np.array(dimino_wolfe(
-            np.vstack(self.inflation_group_generators)))  # Should be ok with different number of generators per latent
-        # return np.array(dimino_wolfe(self.inflation_group_generators.reshape((-1, self.inflated_observed_count))))
+            np.vstack(self.inflation_group_generators)))
+
     
     def _InflateOneDeterminismAssumption(self):
         for screening in self.determinism_checks:
@@ -399,13 +330,10 @@ class InflatedGraph(LatentVariableGraph):
                 map(lambda orig_node_indices: np.take(self.canonical_world,
                                                       np.array(orig_node_indices) - self.latent_count),
                     screening[:-1]))
-            symops = np.array([self.inflation_group_generators[U3][0] for U3 in U3s])  # Now 2d array
+            symops = np.array([self.inflation_group_generators[U3][0] for U3 in U3s])
             Zs_new_world = np.take(reduce(np.take, symops), Zs)
-            # The ordering of variables here must reflect the ordering used by Find_b
-            # We can return it as a flat array.
             variable_ordering = np.argsort(np.hstack(screening[:-1]))
-            # nonai_exp_set = (Ys.tolist(),Xs.tolist(),Zs_new_world.tolist()) #Changed ordering
-            nonai_exp_set = np.hstack((Ys, Xs, Zs_new_world)).take(variable_ordering)  # Changed ordering
+            nonai_exp_set = np.hstack((Ys, Xs, Zs_new_world)).take(variable_ordering)
             yield nonai_exp_set
 
     # TODO: Explore larger sets being screened off. What about Ys PLURAL being screened off from U1s? Isn't that worth looking into?
@@ -453,15 +381,12 @@ class ObservationalData:
             else:  # When cardinalities are specified as a list
                 if not isinstance(cardinality, (list, tuple, np.ndarray)):
                     raise TypeError("Cardinality not given as list of integers.")
-                #assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
                 self.observed_count = rawdata
                 self.original_card_product = np.prod(cardinality)
                 self.data_flat = np.full(self.original_card_product, 1.0 / self.original_card_product)
                 self.size = self.data_flat.size
                 if self.observed_count !=len(cardinality):
                     raise ValueError("Cardinality specification does not match the number of observed variables.")
-                #assert self.observed_count == len(
-                    #cardinality), 'Cardinality specification does not match the number of observed variables.'
                 self.cardinalities_array = np.array(cardinality)
 
         elif isinstance(rawdata[0],
@@ -478,7 +403,6 @@ class ObservationalData:
             else:  # When cardinalities are specified as a list
                 if not isinstance(cardinality, (list, tuple, np.ndarray)):
                     raise TypeError("Cardinality not given as list of integers.")
-                #assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
                 self.observed_count = len(rawdata[0])
                 self.original_card_product = np.prod(cardinality)
                 data = np.zeros(self.original_card_product)
@@ -487,8 +411,6 @@ class ObservationalData:
                 self.size = self.data_flat.size
                 if self.observed_count !=len(cardinality):
                     raise ValueError("Cardinality specification does not match the number of observed variables.")
-                #assert self.observed_count == len(
-                 #   cardinality), 'Cardinality specification does not match the number of observed variables.'
                 self.cardinalities_array = np.array(cardinality)
 
         else:
@@ -504,17 +426,14 @@ class ObservationalData:
                 self.original_card_product = cardinality ** self.observed_count
                 if self.observed_count !=len(cardinality):
                     raise ValueError("Cardinality of individual variable could not be inferred.")
-                #assert self.size == self.original_card_product, 'Cardinality of individual variable could not be inferred.'
                 self.cardinalities_array = np.full(self.observed_count, cardinality)
             else:  # When cardinalities are specified as a list
                 if not isinstance(cardinality, (list, tuple, np.ndarray)):
                     raise TypeError("Cardinality not given as list of integers.")
-                #assert isinstance(cardinality, (list, tuple, np.ndarray)), 'Cardinality not given as list of integers.'
                 self.observed_count = len(cardinality)
                 self.original_card_product = np.prod(cardinality)
                 if self.observed_count !=len(cardinality):
                     raise ValueError("Cardinality specification does not match the data.")
-                #assert self.size == self.original_card_product, 'Cardinality specification does not match the data.'
                 self.cardinalities_array = np.array(cardinality)
         self.cardinalities_tuple = tuple(self.cardinalities_array.tolist())
         self.data_reshaped = np.reshape(self.data_flat, self.cardinalities_tuple)
@@ -525,8 +444,6 @@ class InflationProblem(InflatedGraph, ObservationalData):
     def __init__(self, rawgraph, rawdata, card, inflation_order):
         InflatedGraph.__init__(self, rawgraph, inflation_order)
         ObservationalData.__init__(self, rawdata, card)
-
-        self.cardinality = self.cardinalities_array[0]  # To be deprecated on upgrade to mixed cardinality
 
         self.original_cardinalities_array = self.cardinalities_array
         self.original_cardinalities_tuple = self.cardinalities_tuple
@@ -574,28 +491,12 @@ class InflationProblem(InflatedGraph, ObservationalData):
         shape_of_eset = self.inflated_cardinalities_array.take(self.diagonal_expressible_set)
         size_of_eset = shape_of_eset.prod()
         MonomialIntegers = np.arange(size_of_eset).reshape(shape_of_eset)
-        # print(MonomialIntegers.shape)
-        # print(np.array(list(self.diagonal_expressible_set_symmetry_group)))
         for index_permutation in self.diagonal_expressible_set_symmetry_group:
             np.minimum(
                 MonomialIntegers,
                 MonomialIntegers.transpose(index_permutation),
                 out=MonomialIntegers)
         return PositionIndex(MonomialIntegers.ravel())
-
-        # monomial_count = int(self.original_cardinality_product ** self.min_inflation_order)
-        # permutation_count = int(np.math.factorial(self.min_inflation_order))
-        #
-        # MonomialIntegers = np.arange(0, monomial_count, 1, np.uint)
-        # new_shape = np.full(self.min_inflation_order, self.original_card_product)
-        # MonomialIntegersPermutations = np.empty([permutation_count, monomial_count], np.uint)
-        # IndexPermutations = list(permutations(np.arange(self.min_inflation_order)))
-        # MonomialIntegersPermutations[0] = MonomialIntegers
-        # MonomialIntegers = MonomialIntegers.reshape(new_shape)
-        # for i in np.arange(1, permutation_count):
-        #     MonomialIntegersPermutations[i] = np.transpose(MonomialIntegers, IndexPermutations[i]).flat
-        # return PositionIndex(np.amin(
-        #     MonomialIntegersPermutations, axis=0))
 
     def EncodedColumnToMonomial(self, expr_set):
         # Can be used for off-diagonal expressible sets with no adjustment!
@@ -611,8 +512,7 @@ class InflationProblem(InflatedGraph, ObservationalData):
     def EncodedA(self):
         result = self.EncodedMonomialToRow.take(self.EncodedColumnToMonomial(self.diagonal_expressible_set)).take(
             self.ValidColumnOrbits)
-        # Once the encoding is done, the order of the columns can be tweaked at will!
-        result.sort(axis=0)  # in-place sort
+        result.sort(axis=0) 
         return result
 
     def EncodedA_ExtraExpressible(self):
@@ -622,14 +522,10 @@ class InflationProblem(InflatedGraph, ObservationalData):
         results[0] = self.EncodedMonomialToRow.take(self.EncodedColumnToMonomial(self.diagonal_expressible_set)).take(
             self.ValidColumnOrbits)
         for i in np.arange(1, row_blocks_count):
-            # It is critical to pass the same ORDER of variables to GenerateEncodingColumnToMonomial and to Find_B_block
-            # In order for names to make sense, I am electing to pass a SORTED version of the flat set, see InflateOneExpressibleSet
             results[i] = self.EncodedColumnToMonomial(self.inflated_offdiagonal_expressible_sets[i - 1]).take(
                 self.ValidColumnOrbits)
         accumulated = np.add.accumulate(np.amax(results, axis=(1, 2)) + 1)
         offsets = np.hstack(([0], accumulated[:-1]))
-        # Once the encoding is done, the order of the columns can be tweaked at will!
-        # result.sort(axis=0)  # in-place sort
         return np.hstack(results + offsets[:, np.newaxis, np.newaxis])
 
     def InflationMatrix(self, extra_expressible=True):
@@ -689,8 +585,6 @@ class InflationProblem(InflatedGraph, ObservationalData):
                                  for inflation_variables_indices
                                  in lists_of_inflation_variables_indices)))
         einsum_input.append(list(chain.from_iterable(lists_of_inflation_variables_indices)))
-        # print(einsum_input)
-        # print(list(map(lambda a: a.shape,einsum_input)))
         return np.einsum(*einsum_input).ravel()
 
     def _symbolic_marginal(self, inflation_variables_indices):
@@ -708,13 +602,6 @@ class InflationProblem(InflatedGraph, ObservationalData):
     def Numeric_and_Symbolic_b_block_DIAGONAL(self):
         s, idx, counts = np.unique(self.EncodedMonomialToRow, return_index=True, return_counts=True)
         pre_numeric_b = np.array(self.data_flat)
-        # numeric_b = pre_numeric_b.copy()
-        # pre_symbolic_b = np.array(['P(' + ''.join([''.join(str(i)) for i in idx]) + ')' for idx in
-        #                np.ndindex(self.original_cardinalities_tuple)])
-        # symbolic_b = pre_symbolic_b.copy()
-        # for i in range(1, self.min_inflation_order):
-        #     numeric_b = np.kron(pre_numeric_b, numeric_b)
-        #     symbolic_b = [s1+s2 for s1 in pre_symbolic_b for s2 in symbolic_b]
 
         numeric_b = self._numeric_marginal_product(self.partitioned_expressible_set)
         symbolic_b = self._symbolic_marginal_product(self.partitioned_expressible_set)
@@ -730,8 +617,7 @@ class InflationProblem(InflatedGraph, ObservationalData):
         Y = list(eset[0])
         X = list(eset[1])
         Z = list(eset[2])
-        # It is critical to pass the same ORDER of variables to GenerateEncodingColumnToMonomial and to Find_B_block
-        # In order for names to make sense, I am electing to pass a SORTED version of the flat set.
+
         YXZ = sorted(Y + X + Z)  # see InflateOneExpressibleSet in graphs.py
         lenY = len(Y)
         lenX = len(X)
@@ -743,12 +629,7 @@ class InflationProblem(InflatedGraph, ObservationalData):
         marginal_on_XY = np.einsum(self.data_reshaped, all_original_indices, X + Y)
         marginal_on_XZ = np.einsum(self.data_reshaped, all_original_indices, X + Z)
         marginal_on_X = np.einsum(marginal_on_XY, X + Y, X)
-        # Y_conditional_on_X = np.einsum(marginal_on_XY, X + Y,
-        #                             1 / marginal_on_X, X,
-        #                             Y + X)
-        # numeric_b_block = np.einsum(marginal_on_XZ, X + Z,
-        #                             Y_conditional_on_X, Y + X,
-        #                             YXZ).ravel()
+
         numeric_b_block = np.einsum(marginal_on_XY, X + Y,
                                     marginal_on_XZ, X + Z,
                                     np.divide(1.0, marginal_on_X), X,
@@ -761,15 +642,7 @@ class InflationProblem(InflatedGraph, ObservationalData):
         lowZ = np.arange(lenY + lenX, lenY + lenX + lenZ).tolist()
 
         newshape = tuple(self.inflated_cardinalities_array.take(YXZ))
-        # newshape = tuple(np.full(lenYXZ, self.cardinality, np.uint8))
-        # symbolic_b_block = [
-        #     'P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX + lowY))).tolist()) + '](' +
-        #     ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX + lowY))]) + ')' +
-        #     'P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX + lowZ))).tolist()) + '](' +
-        #     ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX + lowZ))]) + ')' +
-        #     '/P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX))).tolist()) + '](' +
-        #     ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX))]) + ')'
-        #     for idYXZ in np.ndindex(newshape)]
+
         symbolic_b_block = [
             'P[' + ''.join(np.take(names, np.take(YXZ, lowY)).tolist()) + '|' +
             ''.join(np.take(names, np.take(YXZ, lowX)).tolist()) + '](' +
@@ -798,7 +671,6 @@ class InflationProblem(InflatedGraph, ObservationalData):
                 e_set in self.extra_expressible_sets]
 
             for eset in original_extra_ex:
-                # print(tuple(np.take(obs_names, indices).tolist() for indices in eset))
                 numeric_b_block, symbolic_b_block = self.Numeric_and_Symbolic_b_block_NON_AI_EXPR(eset)
                 numeric_b.resize(len(numeric_b) + len(numeric_b_block))
                 numeric_b[-len(numeric_b_block):] = numeric_b_block
