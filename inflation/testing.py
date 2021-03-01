@@ -24,7 +24,8 @@ if __name__ == '__main__':
     import sys
     import pathlib
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from inflation.classes import InflationLP,InflatedGraph
+#from inflation.classes import InflationLP,InflatedGraph
+from inflation.infgraph import InflationLP, InflatedGraph
     
 def ListOfBitStringsToListOfIntegers(list_of_bitstrings):
     return list(map(lambda s: int(s,4),list_of_bitstrings))
@@ -82,17 +83,23 @@ data[MixedCardinalityBaseConversion(cardinality, '1130')]=0.03
 #rawdata=InstrumentalData2
 rawgraph=BellGraph
 rawdata=data
-
 card=[2,3,4,5]
 inflation_order=[1,2,2]
-extra_ex=True
-solver='moseklp'
+
+# extra_ex=True
+# solver='moseklp'
 #solver='mosekAUTO'
 
 #print(InflatedGraph(rawgraph,[2,1,2]).inflation_group_generators)
+
+rawgraph=TriangleGraph
+rawdata=TriangleData
+card=4
+inflation_order=2
+
 InflatedGraph(rawgraph,inflation_order).print_assessment()
 
-Solution=InflationLP(rawgraph, rawdata, card, inflation_order,extra_ex,solver).Inequality(['Raw solver output','Inequality as string','Clean solver output'])
+Solution=InflationLP(rawgraph, rawdata, card, inflation_order).Inequality(['Raw solver output','Inequality as string','Clean solver output'])
 
 
 
