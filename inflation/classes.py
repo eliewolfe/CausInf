@@ -6,7 +6,8 @@ Learning a little bit about the inflation graph from the original graph
 from __future__ import absolute_import
 import numpy as np
 from scipy.sparse import csr_matrix, coo_matrix
-from itertools import combinations, chain, permutations, zip_longest, product, starmap  # TODO: just import itertools
+#from itertools import combinations, chain, permutations, zip_longest, product, starmap  # TODO: just import itertools
+import itertools
 import json
 from collections import defaultdict
 from sys import hexversion
@@ -94,7 +95,7 @@ class LatentVariableGraph:
     def RootIndices_Subsets(self, v):
         "v is presumed to be an integer specifying some node."
         screenable_roots = np.setdiff1d(self.roots_of[v], self.parents_of[v])
-        return chain.from_iterable(combinations(screenable_roots, r) for r in np.arange(1, screenable_roots.size + 1))
+        return itertools.chain.from_iterable(itertools.combinations(screenable_roots, r) for r in np.arange(1, screenable_roots.size + 1))
 
     def _identify_determinism_check(self, root_indices, observed_index):
         """
@@ -104,7 +105,7 @@ class LatentVariableGraph:
         (U1s,Ys,Xs) with the following meaning: Ys are screened off from U1s by Xs.
         """
         list_extract_and_union = lambda list_of_lists, indices: set().union(
-            chain.from_iterable(list_of_lists[v] for v in indices))
+            itertools.chain.from_iterable(list_of_lists[v] for v in indices))
         parents_of_observed = set(self.parents_of[observed_index])
         descendants_of_roots = list_extract_and_union(self.descendants_of, root_indices)
         U1s = list(root_indices)
@@ -128,7 +129,7 @@ class LatentVariableGraph:
         Zs are variables appearing in an expressible set with {Xs,Ys} when U3s is different for Xs and Zs)
         """
         list_extract_and_union = lambda list_of_lists, indices: set().union(
-            chain.from_iterable(list_of_lists[v] for v in indices))
+            itertools.chain.from_iterable(list_of_lists[v] for v in indices))
         children_of_roots = list_extract_and_union(self.children_of, root_indices)
         screeningset = children_of_roots.intersection(self.ancestors_of[observed])
         Xs = screeningset.copy()
@@ -245,7 +246,7 @@ class InflatedGraph(LatentVariableGraph):
     @cached_property
     def expressible_set_variants(self):
         unfiltered_variants = np.array([np.hstack(np.vstack(perm).T) for perm in
-                                        permutations(zip(*zip_longest(*self._canonical_pos, fillvalue=-1)))])
+                                        itertools.permutations(zip(*itertools.zip_longest(*self._canonical_pos, fillvalue=-1)))])
         expressible_set_variants_filter = np.add(unfiltered_variants, 1).astype(np.bool)
         unfiltered_variants = unfiltered_variants.compress(
             (expressible_set_variants_filter == np.atleast_2d(expressible_set_variants_filter[0])).all(axis=1),
@@ -259,7 +260,7 @@ class InflatedGraph(LatentVariableGraph):
     @property
     def partitioned_expressible_set(self):
         return [np.compress(np.add(part, 1).astype(np.bool), part)
-                for part in zip_longest(*self._canonical_pos, fillvalue=-1)]
+                for part in itertools.zip_longest(*self._canonical_pos, fillvalue=-1)]
 
     @property
     def diagonal_expressible_set_symmetry_group(self):
@@ -355,6 +356,104 @@ class InflatedGraph(LatentVariableGraph):
         """
         return list(self._InflateOneExpressibleSet())
 
+ 
+    class ExpressibleSet:
+        # WORK IN PROGRESS
+        def __init__self(self, partitioned_eset_inflated_indices, composition_rule):
+            self.partitioned_eset_inflated_indices = partitioned_eset_inflated_indices
+            self.composition_rule = composition_rule
+
+            #self.from_inflation_indices = InflatedGraph.from_inflation_indices
+            self.partition_eset_original_indices = list(map(InflatedGraph.from_inflation_indices.take, self.partitioned_eset_inflated_indices))
+
+            self.flat_eset_on_original, self._flat_eset_order, self._low_indices_flat_uncompressed = np.unique(
+                np.hstack(self.partitioned_eset_inflated_indices),
+                return_index=True, return_inverse=True)
+
+            
+            self.inflated_names = InflatedGraph.inflated_observed_names #Porting attributes into nested class
+            
+
+            self._posts = [str(rule).replace('1', '').replace('-1', '^(-1)') for rule in self.composition_rule]
+
+            self.symbolic_wrappers = ['P[' + ''.join(InflatedGraph.observed_names[sub_eset].tolist()) + ']{}' + post for
+                                      sub_eset, post in zip(self.partition_eset_original_indices, self._posts)]
+
+            self.flat_eset = np.hstack(self.partitioned_eset_inflated_indices).take(self._flat_eset_order)
+            assert np.array_equal(self.flat_eset, np.unique(np.hstack(self.partitioned_eset_inflated_indices))), "Ambiguity detected regarding ordering of variables in an expressible set."
+            # We should have a 'symmetries' property. I have an idea for this.
+
+            self.all_original_indices = InflatedGraph.observed_indices
+
+
+
+        #Generating the vector of symbolic probabilities
+        @property
+        def low_indices(self):
+            it = iter(self._low_indices_flat_uncompressed)
+            return [list(itertools.islice(it, size)) for size in map(len, self.partitioned_eset_inflated_indices)]
+
+        def _symbolic_element_from_intlist(self, int_list):
+            return ''.join(
+                wrapper.format(np.take(int_list,sub_eset)) for wrapper, sub_eset in zip(self.symbolic_wrappers, self.low_indices))
+        def Generate symbolic_b_block(self, data_shape):
+            return list(map(self._symbolic_element_from_intlist, np.ndindex(tuple(np.take(data_shape, self.flat_eset_on_original)))))
+
+
+
+        # Generating the vector of numerical probabilities
+        @staticmethod
+        def _mult_or_div(rule, tensor):
+            if rule==-1:
+                np.seterr(divide='ignore')
+                newtensor = np.true_divide(1,tensor)
+                newtensor[np.isnan(newtensor)] = 0  # Conditioning on zero probability events
+                np.seterr(divide='warn')
+                return newtensor
+            else:
+                return tensor
+        def Generate_numeric_b_block(self, data_reshaped):
+            marginals = (np.einsum(data_reshaped, self.all_original_indices, sub_eset) for sub_eset in self.partition_eset_original_indices)
+            marginals = map(_mult_or_div, self.composition_rule, marginals)
+
+            einsumargs = list(itertools.chain.from_iterable(zip(marginals,self.partition_eset_original_indices)))
+            einsumargs.append(self.flat_eset_on_original)
+            return np.einsum(*einsumargs)
+
+
+
+        # Getting ready to generate the inflation matrix
+        def Columns_to_unique_rows(self, shaped_column_integers):
+            data_shape = shaped_column_integers.shape
+            # Can be used for off-diagonal expressible sets with no adjustment!
+            expr_set_size = np.take(data_shape, self.flat_eset).prod()
+
+            ColumnIntegers = shaped_column_integers.transpose(
+                MoveToBack(len(data_shape), np.array(expr_set))).reshape(
+                (-1, expr_set_size))
+            EncodingColumnToMonomial = np.empty(shaped_column_integers.size, np.int)
+            EncodingColumnToMonomial[ColumnIntegers] = np.arange(expr_set_size)
+            return EncodingColumnToMonomial
+
+
+
+
+
+    #     np.seterr(divide='ignore')
+    #
+    #     marginal_on_XY = np.einsum(self.data_reshaped, all_original_indices, X + Y)
+    #     marginal_on_XZ = np.einsum(self.data_reshaped, all_original_indices, X + Z)
+    #     marginal_on_X = np.einsum(marginal_on_XY, X + Y, X)
+    #
+    #     numeric_b_block = np.einsum(marginal_on_XY, X + Y,
+    #                                 marginal_on_XZ, X + Z,
+    #                                 np.divide(1.0, marginal_on_X), X,
+    #                                 YXZ).ravel()
+    #     numeric_b_block[np.isnan(numeric_b_block)] = 0  # Conditioning on zero probability events
+    #     np.seterr(divide='warn')
+    #
+
+
     def print_assessment(self):
         super().print_assessment(wait_for_more=True)
         list_of_strings_to_string = lambda l: '[' + ','.join(l) + ']'
@@ -367,66 +466,28 @@ class InflatedGraph(LatentVariableGraph):
             print(nonai_exp_set)
         print('\u2500' * 80 + '\n')
 
-class ExpressibleSet:
-    #WORK IN PROGRESS
-    def __init__self(self, partitioned_eset_indices, composition_rule, inflated_names):
-        self.partitioned_eset_indices = partitioned_eset_indices
-        self.composition_rule = composition_rule
-        self.inflated_names = inflated_names
 
-        self._posts = [str(rule).replace('1','').replace('-1','^(-1)') for rule in  self.composition_rule]
 
-        self.symbolic_wrappers = ['P[' + ''.join(inflated_names[sub_eset].tolist()) + ']({})'+post for sub_eset, post in zip(self.partitioned_eset_indices,self._posts)]
 
-        self.flat_eset = np.unique(np.hstack(self.partitioned_eset_indices))
-        #We should have a 'symmetries' property. I have an idea for this.
 
-        #Let's create a 'low indices' property, using np.unique
+# class ExpressibleSet_WithCardinalities(ExpressibleSet):
+#     def __init__self(self, partitioned_eset_inflated_indices, composition_rule, inflated_names, inflated_cardinalities):
+#         ExpressibleSet__init__self(self, partitioned_eset_inflated_indices, composition_rule, inflated_names)
+#         self.inflated_cardinalities = inflated_cardinalities
+#         self.shape = tuple(np.take(self.inflated_cardinalities, self.flat_eset))
+#
+#
+#     @property
+#     def symbolic_b_block(self):
+#         return list(map(self._symbolic_element_from_intlist, np.ndindex(self.shape)))
 
-class ExpressibleSet_WithCardinalities(ExpressibleSet):
-    def __init__self(self, partitioned_eset_indices, composition_rule, inflated_names, inflated_cardinalities):
-        ExpressibleSet__init__self(self, partitioned_eset_indices, composition_rule, inflated_names)
-        self.inflated_cardinalities = inflated_cardinalities
-        self.shape tuple(np.take(self.inflated_cardinalities, self.flat_eset))
+
+
 
 
         # This is were we compute block of the AMatrix, and the symbolic probabilities. Maybe we can create a partial function to act on the list of actual probabilities?
 
-        # def _numeric_marginal(self, inflation_variables_indices):
-        #     return np.einsum(self.data_reshaped, np.arange(self.observed_count),
-        #                      self.from_inflation_indices.take(inflation_variables_indices))
-        #
-        # def _numeric_marginal_product(self, lists_of_inflation_variables_indices):
-        #     einsum_input = list(
-        #         chain.from_iterable(((self._numeric_marginal(inflation_variables_indices), inflation_variables_indices)
-        #                              for inflation_variables_indices
-        #                              in lists_of_inflation_variables_indices)))
-        #     einsum_input.append(list(chain.from_iterable(lists_of_inflation_variables_indices)))
-        #     return np.einsum(*einsum_input).ravel()
-        #
-        # def _symbolic_marginal(self, inflation_variables_indices):
-        #     original_variables_indices = self.from_inflation_indices.take(inflation_variables_indices)
-        #     names = np.take(self.names[self.latent_count:], original_variables_indices)
-        #     names_part = 'P[' + ''.join(names.tolist()) + ']('
-        #     newshape = tuple(self.inflated_cardinalities_array.take(inflation_variables_indices))
-        #     return [names_part + ''.join([''.join(str(i)) for i in multi_index]) + ')' for multi_index in
-        #             np.ndindex(newshape)]
-        #
-        # def _symbolic_marginal_product(self, lists_of_inflation_variables_indices):
-        #     return list(
-        #         starmap(operator.concat, product(*map(self._symbolic_marginal, lists_of_inflation_variables_indices))))
-        #
-        # def Numeric_and_Symbolic_b_block_DIAGONAL(self):
-        #     s, idx, counts = np.unique(self.EncodedMonomialToRow, return_index=True, return_counts=True)
-        #     pre_numeric_b = np.array(self.data_flat)
-        #
-        #     numeric_b = self._numeric_marginal_product(self.partitioned_expressible_set)
-        #     symbolic_b = self._symbolic_marginal_product(self.partitioned_expressible_set)
-        #
-        #     numeric_b_block = np.multiply(numeric_b.take(idx), counts)
-        #     string_multipliers = ('' if i == 1 else str(i) + '*' for i in counts)
-        #     symbolic_b_block = [s1 + s2 for s1, s2 in zip(string_multipliers, np.take(symbolic_b, idx))]
-        #     return numeric_b_block, symbolic_b_block
+
         #
         # def Numeric_and_Symbolic_b_block_NON_AI_EXPR(self, eset):
         #     names = self.names[self.latent_count:]
@@ -454,24 +515,7 @@ class ExpressibleSet_WithCardinalities(ExpressibleSet):
         #     numeric_b_block[np.isnan(numeric_b_block)] = 0  # Conditioning on zero probability events
         #     np.seterr(divide='warn')
         #
-        #     lowY = np.arange(lenY).tolist()
-        #     lowX = np.arange(lenY, lenY + lenX).tolist()
-        #     lowZ = np.arange(lenY + lenX, lenY + lenX + lenZ).tolist()
-        #
-        #     newshape = tuple(self.inflated_cardinalities_array.take(YXZ))
-        #
-        #     symbolic_b_block = [
-        #         'P[' + ''.join(np.take(names, np.take(YXZ, lowY)).tolist()) + '|' +
-        #         ''.join(np.take(names, np.take(YXZ, lowX)).tolist()) + '](' +
-        #         ''.join([''.join(str(i)) for i in np.take(idYXZ, lowY)]) + '|' +
-        #         ''.join([''.join(str(i)) for i in np.take(idYXZ, lowX)]) + ')' +
-        #         'P[' + ''.join(np.take(names, np.take(YXZ, lowZ)).tolist()) + '|' +
-        #         ''.join(np.take(names, np.take(YXZ, lowX)).tolist()) + '](' +
-        #         ''.join([''.join(str(i)) for i in np.take(idYXZ, lowZ)]) + '|' +
-        #         ''.join([''.join(str(i)) for i in np.take(idYXZ, lowX)]) + ')' +
-        #         'P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX))).tolist()) + '](' +
-        #         ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX))]) + ')'
-        #         for idYXZ in np.ndindex(newshape)]
+
 
 class InflationGraph_WithCardinalities(InflatedGraph):
     # WORK IN PROGRESS
@@ -713,10 +757,10 @@ class InflationProblem(InflatedGraph, ObservationalData):
 
     def _numeric_marginal_product(self, lists_of_inflation_variables_indices):
         einsum_input = list(
-            chain.from_iterable(((self._numeric_marginal(inflation_variables_indices), inflation_variables_indices)
+            itertools.chain.from_iterable(((self._numeric_marginal(inflation_variables_indices), inflation_variables_indices)
                                  for inflation_variables_indices
                                  in lists_of_inflation_variables_indices)))
-        einsum_input.append(list(chain.from_iterable(lists_of_inflation_variables_indices)))
+        einsum_input.append(list(itertools.chain.from_iterable(lists_of_inflation_variables_indices)))
         return np.einsum(*einsum_input).ravel()
 
     def _symbolic_marginal(self, inflation_variables_indices):
@@ -729,7 +773,7 @@ class InflationProblem(InflatedGraph, ObservationalData):
 
     def _symbolic_marginal_product(self, lists_of_inflation_variables_indices):
         return list(
-            starmap(operator.concat, product(*map(self._symbolic_marginal, lists_of_inflation_variables_indices))))
+            itertools.starmap(operator.concat, itertools.product(*map(self._symbolic_marginal, lists_of_inflation_variables_indices))))
 
     def Numeric_and_Symbolic_b_block_DIAGONAL(self):
         s, idx, counts = np.unique(self.EncodedMonomialToRow, return_index=True, return_counts=True)
