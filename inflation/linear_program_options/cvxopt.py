@@ -15,10 +15,10 @@ import numpy as np
 from cvxopt import matrix, solvers, spmatrix
 
 
-def scipy_sparse_to_spmatrix(A):
-    coo = A.asformat('coo', copy=False)
-    SP = spmatrix(coo.data.tolist(), coo.row.tolist(), coo.col.tolist(), size=A.shape)
-    return SP
+# def scipy_sparse_to_spmatrix(A):
+#     coo = A.asformat('coo', copy=False)
+#     SP = spmatrix(coo.data.tolist(), coo.row.tolist(), coo.col.tolist(), size=A.shape)
+#     return SP
 
 
 def InflationLP(A, b):  # A is expected as coo_matrix. Hmm, I wish we could compile this.
@@ -47,13 +47,4 @@ def InflationLP(A, b):  # A is expected as coo_matrix. Hmm, I wish we could comp
     # iparam.sim_switch_optimizer: mosek.onoffkey.on}
     print('Initiating LP...')
     return solvers.lp(CVXOPTb, -MCVXOPT, CVXOPTh, CVXOPTA, matrix(np.ones((1, 1))), solver='mosek')
-    # return sol['x'],sol['gap']
 
-# from __future__ import print_function
-# import sys
-# def TestMemoryPassing(A,b):
-#    print('Function initiated.', flush=True)
-#    sys.stdout.flush()
-#    #len(A.data.tolist())
-#    MCVXOPT=spmatrix(A.data.tolist(), A.col.tolist(), A.row.tolist(), size=A.shape[::-1])
-#    return 5

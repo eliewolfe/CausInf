@@ -28,8 +28,8 @@ from internal_functions.inequality_internals import *
 from internal_functions.groups import dimino_wolfe, minimize_object_under_group_action, orbits_of_object_under_group_action
 from internal_functions.utilities import MoveToFront, PositionIndex, MoveToBack, SparseMatrixFromRowsPerColumn
 from linear_program_options.moseklp import InfeasibilityCertificate
-from linear_program_options.mosekinfeas import InfeasibilityCertificateAUTO
-from linear_program_options.inflationlp import InflationLP
+from linear_program_options.moseklp_dual import InfeasibilityCertificateAUTO
+from linear_program_options.cvxopt import InflationLP
 import operator
 
 
@@ -508,7 +508,7 @@ class InflationProblem(InflatedGraph, ObservationalData):
         return column_integers_marked
 
     @cached_property
-    def ValidColumnOrbits(self):
+    def valid_column_orbits(self):
         AMatrix = orbits_of_object_under_group_action(
             self.shaped_column_integers_marked,
             self.inflation_group_elements).T
@@ -545,21 +545,23 @@ class InflationProblem(InflatedGraph, ObservationalData):
         EncodingColumnToMonomial[ColumnIntegers] = np.arange(expr_set_size)
         return EncodingColumnToMonomial
 
+    @property
     def EncodedA(self):
         result = self.EncodedMonomialToRow.take(self.EncodedColumnToMonomial(self.diagonal_expressible_set)).take(
-            self.ValidColumnOrbits)
+            self.valid_column_orbits)
         result.sort(axis=0) 
         return result
 
+    @property
     def EncodedA_ExtraExpressible(self):
 
         row_blocks_count = len(self.inflated_offdiagonal_expressible_sets) + 1
-        results = np.empty(np.hstack((row_blocks_count, self.ValidColumnOrbits.shape)), np.uint32)
+        results = np.empty(np.hstack((row_blocks_count, self.valid_column_orbits.shape)), np.uint32)
         results[0] = self.EncodedMonomialToRow.take(self.EncodedColumnToMonomial(self.diagonal_expressible_set)).take(
-            self.ValidColumnOrbits)
+            self.valid_column_orbits)
         for i in np.arange(1, row_blocks_count):
             results[i] = self.EncodedColumnToMonomial(self.inflated_offdiagonal_expressible_sets[i - 1]).take(
-                self.ValidColumnOrbits)
+                self.valid_column_orbits)
         accumulated = np.add.accumulate(np.amax(results, axis=(1, 2)) + 1)
         offsets = np.hstack(([0], accumulated[:-1]))
         return np.hstack(results + offsets[:, np.newaxis, np.newaxis])
@@ -607,9 +609,9 @@ class InflationProblem(InflatedGraph, ObservationalData):
         """
 
         if extra_expressible:
-            return SparseMatrixFromRowsPerColumn(self.EncodedA_ExtraExpressible())
+            return SparseMatrixFromRowsPerColumn(self.EncodedA_ExtraExpressible)
         else:
-            return SparseMatrixFromRowsPerColumn(self.EncodedA())
+            return SparseMatrixFromRowsPerColumn(self.EncodedA)
 
     def _numeric_marginal(self, inflation_variables_indices):
         return np.einsum(self.data_reshaped, np.arange(self.observed_count),
