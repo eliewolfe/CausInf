@@ -374,10 +374,104 @@ class ExpressibleSet:
         self.composition_rule = composition_rule
         self.inflated_names = inflated_names
 
-        self.posts = [str(rule).replace('1','').replace('-1','^(-1)') for rule in  self.composition_rule]
+        self._posts = [str(rule).replace('1','').replace('-1','^(-1)') for rule in  self.composition_rule]
 
-        self.symbolic_wrappers = ['P[' + ''.join(inflated_names[sub_eset].tolist()) + ']({})'+post for sub_eset, post in zip(self.partitioned_eset_indices,self.posts)]
+        self.symbolic_wrappers = ['P[' + ''.join(inflated_names[sub_eset].tolist()) + ']({})'+post for sub_eset, post in zip(self.partitioned_eset_indices,self._posts)]
 
+        self.flat_eset = np.unique(np.hstack(self.partitioned_eset_indices))
+        #We should have a 'symmetries' property. I have an idea for this.
+
+        #Let's create a 'low indices' property, using np.unique
+
+class ExpressibleSet_WithCardinalities(ExpressibleSet):
+    def __init__self(self, partitioned_eset_indices, composition_rule, inflated_names, inflated_cardinalities):
+        ExpressibleSet__init__self(self, partitioned_eset_indices, composition_rule, inflated_names)
+        self.inflated_cardinalities = inflated_cardinalities
+        self.shape tuple(np.take(self.inflated_cardinalities, self.flat_eset))
+
+
+        # This is were we compute block of the AMatrix, and the symbolic probabilities. Maybe we can create a partial function to act on the list of actual probabilities?
+
+        # def _numeric_marginal(self, inflation_variables_indices):
+        #     return np.einsum(self.data_reshaped, np.arange(self.observed_count),
+        #                      self.from_inflation_indices.take(inflation_variables_indices))
+        #
+        # def _numeric_marginal_product(self, lists_of_inflation_variables_indices):
+        #     einsum_input = list(
+        #         chain.from_iterable(((self._numeric_marginal(inflation_variables_indices), inflation_variables_indices)
+        #                              for inflation_variables_indices
+        #                              in lists_of_inflation_variables_indices)))
+        #     einsum_input.append(list(chain.from_iterable(lists_of_inflation_variables_indices)))
+        #     return np.einsum(*einsum_input).ravel()
+        #
+        # def _symbolic_marginal(self, inflation_variables_indices):
+        #     original_variables_indices = self.from_inflation_indices.take(inflation_variables_indices)
+        #     names = np.take(self.names[self.latent_count:], original_variables_indices)
+        #     names_part = 'P[' + ''.join(names.tolist()) + ']('
+        #     newshape = tuple(self.inflated_cardinalities_array.take(inflation_variables_indices))
+        #     return [names_part + ''.join([''.join(str(i)) for i in multi_index]) + ')' for multi_index in
+        #             np.ndindex(newshape)]
+        #
+        # def _symbolic_marginal_product(self, lists_of_inflation_variables_indices):
+        #     return list(
+        #         starmap(operator.concat, product(*map(self._symbolic_marginal, lists_of_inflation_variables_indices))))
+        #
+        # def Numeric_and_Symbolic_b_block_DIAGONAL(self):
+        #     s, idx, counts = np.unique(self.EncodedMonomialToRow, return_index=True, return_counts=True)
+        #     pre_numeric_b = np.array(self.data_flat)
+        #
+        #     numeric_b = self._numeric_marginal_product(self.partitioned_expressible_set)
+        #     symbolic_b = self._symbolic_marginal_product(self.partitioned_expressible_set)
+        #
+        #     numeric_b_block = np.multiply(numeric_b.take(idx), counts)
+        #     string_multipliers = ('' if i == 1 else str(i) + '*' for i in counts)
+        #     symbolic_b_block = [s1 + s2 for s1, s2 in zip(string_multipliers, np.take(symbolic_b, idx))]
+        #     return numeric_b_block, symbolic_b_block
+        #
+        # def Numeric_and_Symbolic_b_block_NON_AI_EXPR(self, eset):
+        #     names = self.names[self.latent_count:]
+        #     all_original_indices = np.arange(self.observed_count)
+        #     Y = list(eset[0])
+        #     X = list(eset[1])
+        #     Z = list(eset[2])
+        #
+        #     YXZ = sorted(Y + X + Z)  # see InflateOneExpressibleSet in graphs.py
+        #     lenY = len(Y)
+        #     lenX = len(X)
+        #     lenZ = len(Z)
+        #     lenYXZ = len(YXZ)
+        #
+        #     np.seterr(divide='ignore')
+        #
+        #     marginal_on_XY = np.einsum(self.data_reshaped, all_original_indices, X + Y)
+        #     marginal_on_XZ = np.einsum(self.data_reshaped, all_original_indices, X + Z)
+        #     marginal_on_X = np.einsum(marginal_on_XY, X + Y, X)
+        #
+        #     numeric_b_block = np.einsum(marginal_on_XY, X + Y,
+        #                                 marginal_on_XZ, X + Z,
+        #                                 np.divide(1.0, marginal_on_X), X,
+        #                                 YXZ).ravel()
+        #     numeric_b_block[np.isnan(numeric_b_block)] = 0  # Conditioning on zero probability events
+        #     np.seterr(divide='warn')
+        #
+        #     lowY = np.arange(lenY).tolist()
+        #     lowX = np.arange(lenY, lenY + lenX).tolist()
+        #     lowZ = np.arange(lenY + lenX, lenY + lenX + lenZ).tolist()
+        #
+        #     newshape = tuple(self.inflated_cardinalities_array.take(YXZ))
+        #
+        #     symbolic_b_block = [
+        #         'P[' + ''.join(np.take(names, np.take(YXZ, lowY)).tolist()) + '|' +
+        #         ''.join(np.take(names, np.take(YXZ, lowX)).tolist()) + '](' +
+        #         ''.join([''.join(str(i)) for i in np.take(idYXZ, lowY)]) + '|' +
+        #         ''.join([''.join(str(i)) for i in np.take(idYXZ, lowX)]) + ')' +
+        #         'P[' + ''.join(np.take(names, np.take(YXZ, lowZ)).tolist()) + '|' +
+        #         ''.join(np.take(names, np.take(YXZ, lowX)).tolist()) + '](' +
+        #         ''.join([''.join(str(i)) for i in np.take(idYXZ, lowZ)]) + '|' +
+        #         ''.join([''.join(str(i)) for i in np.take(idYXZ, lowX)]) + ')' +
+        #         'P[' + ''.join(np.take(names, np.take(YXZ, sorted(lowX))).tolist()) + '](' +
+        #         ''.join([''.join(str(i)) for i in np.take(idYXZ, sorted(lowX))]) + ')'
+        #         for idYXZ in np.ndindex(newshape)]
 
 class InflationGraph_WithCardinalities(InflatedGraph):
     # WORK IN PROGRESS
