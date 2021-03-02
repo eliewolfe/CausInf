@@ -79,6 +79,7 @@ def InfeasibilityCertificate(A, b):
             task.putintparam(mosek.iparam.presolve_use, mosek.presolvemode.off)
             task.putintparam(mosek.iparam.presolve_lindep_use, mosek.onoffkey.off)
             task.putintparam(mosek.iparam.presolve_max_num_reductions, 0)
+            #task.putintparam(mosek.iparam.optimizer, mosek.optimizertype.dual_simplex)
             task.putintparam(mosek.iparam.optimizer, mosek.optimizertype.intpnt)
             task.putintparam(mosek.iparam.intpnt_basis, mosek.basindtype.never)
             streamprinter('LP constructed, initiated optimizer.\n')

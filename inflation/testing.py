@@ -84,7 +84,7 @@ data[MixedCardinalityBaseConversion(cardinality, '1130')]=0.03
 rawgraph=BellGraph
 rawdata=data
 card=[2,2,4,4]
-inflation_order=[1,4,4]
+inflation_order=[1,3,3]
 
 # extra_ex=True
 # solver='moseklp'

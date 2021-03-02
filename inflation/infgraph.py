@@ -752,7 +752,7 @@ class InflationLP(InflationProblem):
         self.yRaw = np.array(self.solve['x']).ravel()
 
     def WitnessDataTest(self, y):
-        IncompTest = (np.amin(y) < 0) and (np.dot(y, self.numeric_b) < self.tol)
+        IncompTest = (np.amin(y) < 0) and (np.dot(y, self.numeric_b) < -self.tol)
         if IncompTest:
             print('Distribution Compatibility Status: INCOMPATIBLE')
         else:
