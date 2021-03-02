@@ -229,7 +229,7 @@ class InflatedGraph(LatentVariableGraph):
         self.inflation_minima = np.fromiter(map(np.amin, self._latent_ancestors_cardinalities_of), np.int)
         self.inflation_depths = np.fromiter(map(len, self._latent_ancestors_cardinalities_of), np.int)
 
-        self.original_observed_indices = self.observed_indices
+        self.original_observed_indices = np.asanyarray(self.observed_indices) - self.latent_count
         self.original_observed_names = self.observed_names
         self.from_inflation_indices = np.repeat(self.original_observed_indices, self.inflation_copies)
         self.inflated_observed_names = np.repeat(self.original_observed_names, self.inflation_copies)
@@ -395,27 +395,23 @@ class InflatedGraph(LatentVariableGraph):
  
     class ExpressibleSet:
         # WORK IN PROGRESS
-        def __init__(self, partitioned_eset_inflated_indices, composition_rule, symmetry_group=[]):
+        def __init__(self, partitioned_eset_inflated_indices, composition_rule, from_inflation_indices, observed_names, original_observed_indices, symmetry_group=[]):
             self.partitioned_eset_inflated_indices = partitioned_eset_inflated_indices
             self.composition_rule = composition_rule
             self.symmetry_group = symmetry_group #NOTE: The symmetry group must act on the FLAT version of the eSET. I'm not sure we have this at the moment.
+            self.from_inflation_indices = from_inflation_indices
+            self.observed_names = observed_names
+            self.all_original_indices = original_observed_indices
 
-            #self.from_inflation_indices = InflatedGraph.from_inflation_indices
-            self.partition_eset_original_indices = list(map(InflatedGraph.from_inflation_indices.take, self.partitioned_eset_inflated_indices))
+            self.partition_eset_original_indices = list(map(self.from_inflation_indices.take, self.partitioned_eset_inflated_indices))
 
             self.flat_eset, self._low_indices_flat_uncompressed = np.unique(
                 np.hstack(self.partitioned_eset_inflated_indices), return_inverse=True)
 
-            
-            #self.inflated_names = InflatedGraph.inflated_observed_names #Porting attributes into nested class
-            
-
             self._posts = [str(rule).replace('1', '').replace('-1', '^(-1)') for rule in self.composition_rule]
 
-            self.symbolic_wrappers = ['P[' + ''.join(InflatedGraph.observed_names[sub_eset].tolist()) + ']{}' + post for
+            self.symbolic_wrappers = ['P[' + ''.join(np.take(self.observed_names, sub_eset).tolist()) + ']{}' + post for
                                       sub_eset, post in zip(self.partition_eset_original_indices, self._posts)]
-
-            self.all_original_indices = InflatedGraph.observed_indices
 
 
 
@@ -473,15 +469,25 @@ class InflatedGraph(LatentVariableGraph):
             size_of_eset = shape_of_eset.prod()
             rows_as_integers = np.arange(size_of_eset).reshape(shape_of_eset)
             minimize_object_under_group_action(rows_as_integers,
-            self.diagonal_expressible_set_symmetry_group, skip=1)
+            self.symmetry_group, skip=1)
             return np.unique(rows_as_integers.ravel(), return_index=True)[1]
+
+        def Discarded_rows_to_the_back(self, data_shape):
+            shape_of_eset = np.take(data_shape, self.flat_eset)
+            size_of_eset = shape_of_eset.prod()
+            valid = self.Which_rows_to_keep(data_shape)
+            lenvalid = len(valid)
+            result = np.full(size_of_eset, lenvalid, dtype=np.int)
+            np.put(result, valid, np.arange(len(valid)))
+            return result
 
 
     @cached_property
     def expressible_sets(self):
         results = [self.ExpressibleSet(
             self.partitioned_expressible_set,
-            np.ones(len(self.partitioned_expressible_set)),
+            np.ones(len(self.partitioned_expressible_set), dtype=np.int),
+            self.from_inflation_indices, self.observed_names, self.original_observed_indices,
             symmetry_group = self.diagonal_expressible_set_symmetry_group)]
         for non_ai_eset in self.inflated_offdiagonal_expressible_sets:
             X = list(non_ai_eset[1])
@@ -489,7 +495,8 @@ class InflatedGraph(LatentVariableGraph):
             Z = list(non_ai_eset[2])
             results.append(self.ExpressibleSet(
                     [sorted(X+Y), sorted(X+Z), sorted(X)],
-                    [+1, +1, -1]))
+                    [+1, +1, -1],
+            self.from_inflation_indices, self.observed_names, self.observed_indices))
         return results
 
 
@@ -511,16 +518,16 @@ class InflatedGraph(LatentVariableGraph):
 
 
 
-class InflationGraph_WithCardinalities(InflatedGraph):
-    # WORK IN PROGRESS
-    # The
-    def __init__(self, rawgraph, inflation_order, cardinalities_list):
-        InflatedGraph.__init__(self, rawgraph, inflation_order)
-
-        self.inflated_cardinalities_array = np.repeat(cardinalities_list, self.inflation_copies)
-        self.inflated_cardinalities_tuple = tuple(self.inflated_cardinalities_array.tolist())
-        self.column_count = self.inflated_cardinalities_array.prod()
-        self.shaped_column_integers = np.arange(self.column_count).reshape(self.inflated_cardinalities_tuple)
+# class InflationGraph_WithCardinalities(InflatedGraph):
+#     # WORK IN PROGRESS
+#     # The
+#     def __init__(self, rawgraph, inflation_order, cardinalities_list):
+#         InflatedGraph.__init__(self, rawgraph, inflation_order)
+#
+#         self.inflated_cardinalities_array = np.repeat(cardinalities_list, self.inflation_copies)
+#         self.inflated_cardinalities_tuple = tuple(self.inflated_cardinalities_array.tolist())
+#         self.column_count = self.inflated_cardinalities_array.prod()
+#         self.shaped_column_integers = np.arange(self.column_count).reshape(self.inflated_cardinalities_tuple)
 
 
 
@@ -651,31 +658,34 @@ class InflationProblem(InflatedGraph, ObservationalData):
     @property
     def _InflationMatrix(self):
         for eset in self.expressible_sets:
-            AMatrix = eset.Columns_to_unique_rows(self.shaped_column_integers).take(self.valid_column_orbits)
+            AMatrix = eset.Discarded_rows_to_the_back(self.inflated_cardinalities_array).take(
+                eset.Columns_to_unique_rows(self.shaped_column_integers)).take(self.valid_column_orbits)
             AMatrix = SparseMatrixFromRowsPerColumn(AMatrix)
-            AMatrix = AMatrix[eset.Which_rows_to_keep(self.inflated_cardinalities_array)]
-            yield AMatrix
+            if len(eset.symmetry_group)<= 1:
+                yield AMatrix
+            else:
+                yield AMatrix.asformat('csr', copy=False)[:-1]
     @cached_property
     def inflation_matrix(self):
-        sparse_vstack(list(self._InflationMatrix))
+        return sparse_vstack(list(self._InflationMatrix))
 
     @property
     def _NumericB(self):
         for eset in self.expressible_sets:
             b_block = eset.Generate_numeric_b_block(self.data_reshaped)
-            yield b_block[eset.Which_rows_to_keep(self.inflated_cardinalities_array)]
+            yield np.take(b_block,eset.Which_rows_to_keep(self.inflated_cardinalities_array))
     @cached_property
     def numeric_b(self):
-        np.hstack(list(self._NumericB))
+        return np.hstack(list(self._NumericB))
 
     @property
     def _SymbolicB(self):
         for eset in self.expressible_sets:
             s_block = eset.Generate_symbolic_b_block(self.inflated_cardinalities_array)
-            yield s_block[eset.Which_rows_to_keep(self.inflated_cardinalities_array)]
+            yield np.take(s_block,eset.Which_rows_to_keep(self.inflated_cardinalities_array))
     @cached_property
     def symbolic_b(self):
-        np.hstack(list(self._SymbolicB))
+        return np.hstack(list(self._SymbolicB))
 
 
 

@@ -230,7 +230,7 @@ class InflatedGraph(LatentVariableGraph):
         self.inflation_minima = np.fromiter(map(np.amin, self._latent_ancestors_cardinalities_of), np.int)
         self.inflation_depths = np.fromiter(map(len, self._latent_ancestors_cardinalities_of), np.int)
 
-        self.original_observed_indices = self.observed_indices
+        self.original_observed_indices = np.asanyarray(self.observed_indices) - self.latent_count
         self.original_observed_names = self.observed_names
         self.from_inflation_indices = np.repeat(self.original_observed_indices, self.inflation_copies)
         self.inflated_observed_names = np.repeat(self.original_observed_names, self.inflation_copies)
@@ -637,7 +637,7 @@ class ObservationalData:
             if isinstance(cardinality, int):  # When cardinality is specified as an integer
                 self.observed_count = np.rint(np.divide(np.log(self.size), np.log(cardinality))).astype(np.int)
                 self.original_card_product = cardinality ** self.observed_count
-                if self.observed_count != len(cardinality):
+                if self.original_card_product != self.size:
                     raise ValueError("Cardinality of individual variable could not be inferred.")
                 self.cardinalities_array = np.full(self.observed_count, cardinality)
             else:  # When cardinalities are specified as a list
