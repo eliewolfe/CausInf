@@ -26,11 +26,12 @@ if __name__ == '__main__':
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from internal_functions.inequality_internals import *
 from internal_functions.groups import dimino_wolfe, minimize_object_under_group_action, orbits_of_object_under_group_action
-from internal_functions.utilities import MoveToFront, PositionIndex, MoveToBack, SparseMatrixFromRowsPerColumn
+from internal_functions.utilities import MoveToFront, MoveToBack, SparseMatrixFromRowsPerColumn
 from linear_program_options.moseklp import InfeasibilityCertificate
 from linear_program_options.moseklp_dual import InfeasibilityCertificateAUTO
 from linear_program_options.cvxopt import InflationLP
-import operator
+
+#from methodtools import lru_cache
 
 
 class LatentVariableGraph:
@@ -464,22 +465,22 @@ class InflatedGraph(LatentVariableGraph):
             return encoding_of_columns_to_monomials
 
         #I really want a function which allows me to delete certain rows based on symmetry...
-        def Which_rows_to_keep(self, data_shape):
-            shape_of_eset = np.take(data_shape, self.flat_eset)
-            size_of_eset = shape_of_eset.prod()
-            rows_as_integers = np.arange(size_of_eset).reshape(shape_of_eset)
-            minimize_object_under_group_action(rows_as_integers,
-            self.symmetry_group, skip=1)
-            return np.unique(rows_as_integers.ravel(), return_index=True)[1]
-
-        def Discarded_rows_to_the_back(self, data_shape):
-            shape_of_eset = np.take(data_shape, self.flat_eset)
-            size_of_eset = shape_of_eset.prod()
-            valid = self.Which_rows_to_keep(data_shape)
-            lenvalid = len(valid)
-            result = np.full(size_of_eset, lenvalid, dtype=np.int)
-            np.put(result, valid, np.arange(len(valid)))
-            return result
+        # def Which_rows_to_keep(self, data_shape):
+        #     shape_of_eset = np.take(data_shape, self.flat_eset)
+        #     size_of_eset = shape_of_eset.prod()
+        #     rows_as_integers = np.arange(size_of_eset).reshape(shape_of_eset)
+        #     minimize_object_under_group_action(rows_as_integers,
+        #     self.symmetry_group, skip=1)
+        #     return np.unique(rows_as_integers.ravel(), return_index=True)[1]
+        #
+        # def Discarded_rows_to_the_back(self, data_shape):
+        #     shape_of_eset = np.take(data_shape, self.flat_eset)
+        #     size_of_eset = shape_of_eset.prod()
+        #     valid = self.Which_rows_to_keep(data_shape)
+        #     lenvalid = len(valid)
+        #     result = np.full(size_of_eset, lenvalid, dtype=np.int)
+        #     np.put(result, valid, np.arange(len(valid)))
+        #     return result
 
 
     @cached_property
@@ -626,6 +627,24 @@ class InflationProblem(InflatedGraph, ObservationalData):
         self.column_count = self.inflated_cardinalities_array.prod()
         self.shaped_column_integers = np.arange(self.column_count).reshape(self.inflated_cardinalities_tuple)
 
+        #Now we need to cache the relevant properties of an expressible set.
+
+        for eset in self.expressible_sets:
+            eset.shape_of_eset = np.take(self.inflated_cardinalities_array, eset.flat_eset)
+            eset.size_of_eset = eset.shape_of_eset.prod()
+            eset.which_rows_to_keep = np.arange(eset.size_of_eset).reshape(eset.shape_of_eset)
+            minimize_object_under_group_action(
+                eset.which_rows_to_keep,
+                eset.symmetry_group, skip=1)
+            eset.which_rows_to_keep = np.unique(eset.which_rows_to_keep.ravel(), return_index=True)[1]
+            eset.size_of_eset_after_symmetry = len(eset.which_rows_to_keep)
+            eset.there_are_discarded_rows = (eset.size_of_eset_after_symmetry < eset.size_of_eset)
+            eset.discarded_rows_to_the_back = np.full(eset.size_of_eset, eset.size_of_eset_after_symmetry, dtype=np.int)
+            np.put(eset.discarded_rows_to_the_back, eset.which_rows_to_keep, np.arange(eset.size_of_eset_after_symmetry))
+
+        print(len(self.expressible_sets), 'Expressible sets have been computed. Let see what is taking so long.')
+
+
     @cached_property
     def shaped_column_integers_marked(self):
         column_integers_marked = self.shaped_column_integers.copy()
@@ -655,25 +674,39 @@ class InflationProblem(InflatedGraph, ObservationalData):
         #AMatrix = np.compress(minima == np.abs(AMatrix[0]), AMatrix, axis=1)
         return AMatrix
 
+    @staticmethod
+    def csr_vstack(it):
+        newdata = np.hstack(tuple(m.data for m in it))
+        newindices = np.hstack(tuple(m.indices for m in it))
+        newindptrs = np.vstack(tuple(m.indptr for m in it))
+        newindptrs = np.hstack(([0],newindptrs[1:,-1]))+newindptrs[:,1:]
+        newindptrs = np.hstack(([0],newindptrs.ravel()))
+        newlen = np.sum(tuple(len(m) for m in it))
+        return csr_matrix((newdata,newindices,newindptrs), shape=(newlen,it[0].shape[1]))
+
+
     @property
     def _InflationMatrix(self):
         for eset in self.expressible_sets:
-            AMatrix = eset.Discarded_rows_to_the_back(self.inflated_cardinalities_array).take(
+            AMatrix = eset.discarded_rows_to_the_back.take(
                 eset.Columns_to_unique_rows(self.shaped_column_integers)).take(self.valid_column_orbits)
-            AMatrix = SparseMatrixFromRowsPerColumn(AMatrix)
-            if len(eset.symmetry_group)<= 1:
-                yield AMatrix
+            AMatrix = SparseMatrixFromRowsPerColumn(AMatrix).asformat('csr', copy=False)
+            if eset.there_are_discarded_rows:
+                yield AMatrix[:-1]
             else:
-                yield AMatrix.asformat('csr', copy=False)[:-1]
+                yield AMatrix
     @cached_property
     def inflation_matrix(self):
-        return sparse_vstack(list(self._InflationMatrix))
+        if len(self.expressible_sets)==1:
+            return next(self._InflationMatrix)
+        else:
+            return self.csr_vstack(list(self._InflationMatrix))
 
     @property
     def _NumericB(self):
         for eset in self.expressible_sets:
             b_block = eset.Generate_numeric_b_block(self.data_reshaped)
-            yield np.take(b_block,eset.Which_rows_to_keep(self.inflated_cardinalities_array))
+            yield np.take(b_block,eset.which_rows_to_keep)
     @cached_property
     def numeric_b(self):
         return np.hstack(list(self._NumericB))
@@ -682,7 +715,7 @@ class InflationProblem(InflatedGraph, ObservationalData):
     def _SymbolicB(self):
         for eset in self.expressible_sets:
             s_block = eset.Generate_symbolic_b_block(self.inflated_cardinalities_array)
-            yield np.take(s_block,eset.Which_rows_to_keep(self.inflated_cardinalities_array))
+            yield np.take(s_block,eset.which_rows_to_keep)
     @cached_property
     def symbolic_b(self):
         return np.hstack(list(self._SymbolicB))

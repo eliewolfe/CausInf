@@ -84,7 +84,7 @@ data[MixedCardinalityBaseConversion(cardinality, '1130')]=0.03
 rawgraph=BellGraph
 rawdata=data
 card=[2,2,4,4]
-inflation_order=[1,2,2]
+inflation_order=[1,4,4]
 
 # extra_ex=True
 # solver='moseklp'
@@ -98,10 +98,8 @@ inflation_order=[1,2,2]
 #inflation_order=2
 
 InflatedGraph(rawgraph,inflation_order).print_assessment()
-PreLP = InflationProblem(rawgraph, rawdata, card, inflation_order)
-print(PreLP.inflation_matrix.shape)
-print(PreLP.numeric_b.shape)
-print(PreLP.symbolic_b.shape)
+#PreLP = InflationProblem(rawgraph, rawdata, card, inflation_order)
+#print(PreLP.inflation_matrix.shape, PreLP.numeric_b.shape, PreLP.symbolic_b.shape)
 
 Solution=InflationLP(rawgraph, rawdata, card, inflation_order).Inequality(['Raw solver output','Inequality as string','Clean solver output'])
 
