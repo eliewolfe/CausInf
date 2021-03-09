@@ -20,8 +20,8 @@ from internal_functions.inequality_internals import *
 from linear_program_options.moseklp import InfeasibilityCertificate
 from linear_program_options.mosekinfeas import InfeasibilityCertificateAUTO
 #from linear_program_options.inflationlp import InflationLP
-#from classes import InflationProblem
-from infgraph import *
+from classes import InflationProblem
+#from infgraph import *
 
 if __name__ == '__main__':
     import sys
@@ -41,8 +41,6 @@ def MixedCardinalityBaseConversion(cardinality, string):
     card=[]
     cardinality=np.array(cardinality)
     for i in range(len(cardinality)):
-        #print(list(np.arange(len(cardinality)-i-1)+i+1))
-        #print(cardinality[list(np.arange(len(cardinality)-i-1)+i+1)])
         if len(cardinality)-i-1 != 0:
             card.append(np.product(cardinality[np.arange(len(cardinality)-i-1)+i+1]))
         else:
@@ -128,7 +126,7 @@ def FindData(elem,Gs):
     
     BellData=Initial_Data
     print(BellData)
-    cardinality=[2,2,3,3]
+    cardinality=[2,2,2,2]
     original_card_product=np.prod(cardinality)
     data = np.zeros(original_card_product)
     data[list(map(lambda s: MixedCardinalityBaseConversion(cardinality, s),BellData))] = 1/len(BellData)
@@ -152,8 +150,8 @@ def BellFacet(yRaw,InMat,tol,numeric_b):
     if WitnessDataTest(tol,numeric_b,yRaw):
         y = IntelligentRound(yRaw, InfMat)
         checkY= csr_matrix(y.ravel()).dot(InfMat)
-        print(np.nonzero(y))
-        print(y[np.nonzero(y)[0]])
+        #print(np.nonzero(y))
+        #print(y[np.nonzero(y)[0]])
         #print(np.unique(checkY.toarray()))
         ZeroColumns=np.where(np.abs(checkY.toarray().ravel())<=10**-10)[0]
         #SmallerInfMat=InfMat[:,ZeroColumns.tolist()]-csr_matrix(np.repeat(InfMat[:,ZeroColumns.tolist()[0]].toarray().ravel()[:,np.newaxis],len(InfMat[:,ZeroColumns.tolist()].toarray()[0]),1))
@@ -197,8 +195,8 @@ def IfSame(v_prime,old_v_primes):
     return Same
     
 
-mB=3
-mA=3
+mB=2
+mA=2
 g=0
 h=0
 n=0
@@ -208,16 +206,30 @@ FacetYs=[]
 rawgraph = Graph.Formula("L->A:B,Ux->X,Uy->Y,X->A,Y->B")
 #for n in range(len(Gs)):
 rawdata=FindData(n,Gs)
-card=[2,2,3,3]
+card=[2,2,2,2]
 inflation_order=[1,2,2]
-
-#InfProb=InflationProblem(rawgraph, rawdata, card, inflation_order)
-#numeric_b,symbolic_b=InfProb.numeric_and_symbolic_b()
-#InfMat=InfProb.InflationMatrix()
+"""
+The following block is for classes.py (don't forget to comment/uncomment the relevant files in the importing section)
+-----------------------------------------------------------------
+"""
 InfProb=InflationProblem(rawgraph, rawdata, card, inflation_order)
-InfMat=InfProb.inflation_matrix
-numeric_b=InfProb.numeric_b
-symbolic_b=InfProb.symbolic_b
+numeric_b,symbolic_b=InfProb.numeric_and_symbolic_b()
+InfMat=csr_matrix(InfProb.InflationMatrix())
+"""
+-----------------------------------------------------------------
+"""
+"""
+The following block is for infgraph.py (don't forget to comment/uncomment the relevant files in the importing section)
+-----------------------------------------------------------------
+"""
+#InfProb=InflationProblem(rawgraph, rawdata, card, inflation_order)
+#InfMat=InfProb.inflation_matrix
+#numeric_b=InfProb.numeric_b
+#symbolic_b=InfProb.symbolic_b
+"""
+------------------------------------------------------------------
+"""
+
 marked_rows=[]
 #print(InfMat.shape)
 
@@ -225,19 +237,23 @@ for i in range(len(symbolic_b)):
     
     strat=symbolic_b[i]
     
-    if strat[12]==strat[22] or strat[14]==strat[24]:
+    """
+    for card=[2,2,2,2] and inf_ord=[1,2,2] with classes:
+    """
+    
+    if strat[10]==strat[19] or strat[11]==strat[20]:
+        """
+        #for card=[2,2,2,2] and inf_ord=[1,2,2] with infgraph:
+        """
+    #if strat[12]==strat[22] or strat[14]==strat[24]:
+        """
+        for card=[2,2,3,3] and inf_ord=[1,3,3] with infgraph:
+        """
     #if strat[12] == strat[22] and strat[12] == strat[32] and strat[14] == strat[24] and strat[14] == strat[34]:
         
-        #numeric_b=np.delete(numeric_b,i)
-        #InfMat=delete_row_csr(InfMat, i)
         marked_rows.append(i)
-    #elif strat[13]==strat[23]:
-    #elif strat[13] == strat[23] and strat[13] == strat[33] and strat[22]==strat[33]:
 
-        #numeric_b=np.delete(numeric_b,i)
-        #InfMat=delete_row_csr(InfMat, i)              
-        #marked_rows.append(i)
-#print(len(marked_rows))
+
 numeric_b=np.delete(numeric_b,marked_rows)
 symbolic_b=np.delete(symbolic_b,marked_rows)
 InfMat=delete_rows_csr(InfMat, marked_rows) 
@@ -283,7 +299,7 @@ for i in range(len(All_kl)):
     y,Fcondition,t,v=BellFacet(yRaw,InfMat,tol,numeric_b)
     if Fcondition: 
         FacetYs.append(y)
-        break
+        
 
 
 """
