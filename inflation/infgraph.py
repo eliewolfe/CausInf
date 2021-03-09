@@ -489,7 +489,8 @@ class InflatedGraph(LatentVariableGraph):
             self.partitioned_expressible_set,
             np.ones(len(self.partitioned_expressible_set), dtype=np.int),
             self.from_inflation_indices, self.observed_names, self.original_observed_indices,
-            symmetry_group = self.diagonal_expressible_set_symmetry_group)]
+            symmetry_group = self.diagonal_expressible_set_symmetry_group
+        )]
         for non_ai_eset in self.inflated_offdiagonal_expressible_sets:
             X = list(non_ai_eset[1])
             Y = list(non_ai_eset[0])
@@ -537,7 +538,8 @@ class ObservationalData:
 
     @staticmethod
     def MixedCardinalityBaseConversion(cardinality, string):
-        card = np.array([cardinality[i] ** (len(cardinality) - (i + 1)) for i in range(len(cardinality))])
+        #card = np.array([cardinality[i] ** (len(cardinality) - (i + 1)) for i in range(len(cardinality))])
+        card = np.flip(np.multiply.accumulate(np.hstack((1, np.flip(cardinality))))[:-1])
         str_to_array = np.array([int(i) for i in string])
         return np.dot(card, str_to_array)
 

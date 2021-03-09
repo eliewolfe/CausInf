@@ -27,19 +27,27 @@ if __name__ == '__main__':
 #from inflation.classes import InflationLP,InflatedGraph
 from inflation.infgraph import InflationLP, InflatedGraph, InflationProblem
     
-def ListOfBitStringsToListOfIntegers(list_of_bitstrings):
-    return list(map(lambda s: int(s,4),list_of_bitstrings))
-def UniformDistributionFromSupport(list_of_bitstrings):
-    numvar = max(map(len,list_of_bitstrings))
-    numevents = len(list_of_bitstrings)
-    data = np.zeros(4 ** numvar)
-    data[ListOfBitStringsToListOfIntegers(list_of_bitstrings)] = 1/numevents
-    return data
+#def ListOfBitStringsToListOfIntegers(list_of_bitstrings):
+#    return list(map(lambda s: int(s,4), list_of_bitstrings))
+
+
 
 def MixedCardinalityBaseConversion(cardinality, string):
-    card=np.array([cardinality[i]**(len(cardinality)-(i+1)) for i in range(len(cardinality))])
+    #card=np.array([cardinality[i]**(len(cardinality)-(i+1)) for i in range(len(cardinality))])
+    card=np.flip(np.multiply.accumulate(np.hstack((1, np.flip(cardinality))))[:-1])
     str_to_array=np.array([int(i) for i in string])
     return np.dot(card,str_to_array)
+def UniformDistributionFromSupport(list_of_strings, cardinality_list):
+    numvar = len(cardinality_list)
+    prod_cardinality = np.prod(cardinality_list)
+    cardinality_converter = np.flip(np.multiply.accumulate(np.hstack((1, np.flip(cardinality_list))))[:-1])
+    data = np.zeros(prod_cardinality)
+    array_of_integers = np.fromiter(map(int,''.join(list_of_strings)),dtype=np.int).reshape((-1,numvar))
+    list_of_integers = np.unique(np.dot(array_of_integers, cardinality_converter))
+    numevents = len(list_of_integers)
+    print(list_of_integers)
+    data[list_of_integers] = 1/numevents
+    return data
 
 InstrumentalGraph = Graph.Formula("U1->X->A->B,U2->A:B")
 BiconfoundingGraph = Graph.Formula("U1->A:B,U2->A:C,A->B:C")
@@ -69,8 +77,9 @@ BellDataIncomp=B
 BellData=['0000','0010','0001','0020','0002','1011','0111','1100','1110','1101','1120','1102','0021','1121','0012','1112','0022','1122','0031','0131','0032','0132','0013','1013','0023','1023','0030','0130','0003','1003','0033','0133']
 cardinality=[2,2,4,4]
 original_card_product=np.prod(cardinality)
-data = np.zeros(original_card_product)
-data[list(map(lambda s: MixedCardinalityBaseConversion(cardinality, s),BellData))] = 1/len(BellData)
+#data = np.zeros(original_card_product)
+#data[list(map(lambda s: MixedCardinalityBaseConversion(cardinality, s),BellData))] = 1/len(BellData)
+data = UniformDistributionFromSupport(BellData, cardinality)
 data[MixedCardinalityBaseConversion(cardinality, '0033')]=1/16
 data[MixedCardinalityBaseConversion(cardinality, '0133')]=0
 
@@ -101,7 +110,13 @@ InflatedGraph(rawgraph,inflation_order).print_assessment()
 #PreLP = InflationProblem(rawgraph, rawdata, card, inflation_order)
 #print(PreLP.inflation_matrix.shape, PreLP.numeric_b.shape, PreLP.symbolic_b.shape)
 
-Solution=InflationLP(rawgraph, rawdata, card, inflation_order).Inequality(['Raw solver output','Inequality as string','Clean solver output'])
+InfLP = InflationLP(rawgraph, rawdata, card, inflation_order)
+
+InfLP.symbolic_b
+InfLP.numeric_b
+InfLP.inflation_matrix
+
+Solution=InfLP.Inequality(['Raw solver output','Inequality as string','Clean solver output'])
 
 
 
