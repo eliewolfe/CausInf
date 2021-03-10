@@ -692,7 +692,7 @@ class InflationProblem(InflatedGraph, ObservationalData):
         AMatrix = orbits_of_object_under_group_action(
             self.shaped_column_integers_marked,
             self.inflation_group_elements).T
-        np.compress(AMatrix[0]>=0, AMatrix, axis=1)
+        AMatrix = np.compress(AMatrix[0]>=0, AMatrix, axis=1)
         #AMatrix = np.compress(minima == np.abs(AMatrix[0]), AMatrix, axis=1)
         return AMatrix
 
