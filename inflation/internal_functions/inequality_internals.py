@@ -66,15 +66,9 @@ def symboltally(indextally,symbolic_b):
         
     return symboltally
 
-def inequality_as_string(y,symbolic_b):
-    #import sympy as sy
-    #final_ineq_WITHOUT_ZEROS = np.multiply(y[np.nonzero(y)],sy.symbols(' '.join(np.take(symbolic_b, np.nonzero(y))[0])))
+def inequality_as_string(y, symbolic_b):
 
-    final_ineq_WITHOUT_ZEROS = [str(val)+str(symbolic_b) for val,scal in zip(
-        np.take(y,np.flatnonzero(y)),np.take(y,np.flatnonzero(symbolic_b)))]
-                                                   
-    #Inequality_as_string = '0<=' + "+".join([str(term) for term in final_ineq_WITHOUT_ZEROS]).replace('*P','P')
-    Inequality_as_string = '0<=' + "+".join(final_ineq_WITHOUT_ZEROS).replace('+-', '-')
-    #Inequality_as_string = Inequality_as_string.replace('+-', '-')
+    final_ineq_WITHOUT_ZEROS = list(map(''.join, np.vstack((y, symbolic_b)).T[np.flatnonzero(y)]))
+    Inequality_as_string = '0<=' + "+".join(final_ineq_WITHOUT_ZEROS).replace('+-', '-').replace('+1P', '+P').replace('-1P', '-P')
 
-    return Inequality_as_string
+    return Inequality_as_string.replace('=1P', '=P')

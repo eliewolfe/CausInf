@@ -644,7 +644,7 @@ class InflationProblem(InflatedGraph, ObservationalData):
             eset.discarded_rows_to_the_back = np.full(eset.size_of_eset, eset.size_of_eset_after_symmetry, dtype=np.int)
             np.put(eset.discarded_rows_to_the_back, eset.which_rows_to_keep, np.arange(eset.size_of_eset_after_symmetry))
 
-        print(len(self.expressible_sets), 'Expressible sets have been computed. Let see what is taking so long.')
+        print(len(self.expressible_sets), 'expressible sets have been computed. Now constructing objects.')
 
 
     @cached_property
@@ -759,7 +759,7 @@ class InflationLP(InflationProblem):
 
         self.idxtally=indextally(self.y)
 
-        self.symtally = symboltally(indextally(self.y), self.symbolic_b)
+        self.symtally = symboltally(self.idxtally, self.symbolic_b)
 
         self.ineq_as_str = inequality_as_string(self.y, self.symbolic_b)
 

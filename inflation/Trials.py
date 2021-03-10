@@ -237,7 +237,7 @@ FacetYs = []
 # old_v_primes=[]
 rawgraph = Graph.Formula("L->A:B,Ux->X,Uy->Y,X->A,Y->B")
 # for n in range(len(Gs)):
-card = [2, 2, 3, 3]
+card = [2, 2, mA, mB]
 rawdata = FindData(n, Gs, card)
 
 inflation_order = [1, 2, 2]
@@ -245,6 +245,7 @@ inflation_order = [1, 2, 2]
 -----------------------------------------------------------------
 """
 InfProb = InflationProblem(rawgraph, rawdata, card, inflation_order)
+
 numeric_b = InfProb.numeric_b
 symbolic_b = InfProb.symbolic_b
 InfMat = InfProb.inflation_matrix
@@ -286,6 +287,8 @@ solve = InfeasibilityCertificate(InfMat, numeric_b)
 yRaw = np.array(solve['x']).ravel()
 tol = solve['gap']
 y, Fcondition, t, v = BellFacet(yRaw, InfMat, tol, numeric_b)
+
+print(inequality_as_string(y, symbolic_b))
 # v_prime=v_prim(v)
 # Scondition=IfSame(v_prime,old_v_primes)
 
