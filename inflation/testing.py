@@ -25,7 +25,7 @@ if __name__ == '__main__':
     import pathlib
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 #from inflation.classes import InflationLP,InflatedGraph
-from inflation.infgraph import InflationLP, InflatedGraph, InflationProblem
+from inflation.infgraph import InflationLP, InflatedGraph
     
 #def ListOfBitStringsToListOfIntegers(list_of_bitstrings):
 #    return list(map(lambda s: int(s,4), list_of_bitstrings))
@@ -116,15 +116,19 @@ InfLP.symbolic_b
 InfLP.numeric_b
 InfLP.inflation_matrix
 
-Solution=InfLP.Inequality(['Raw solver output','Inequality as string','Clean solver output'])
+#Solution=InfLP.Inequality(['Raw solver output','Inequality as string','Clean solver output'])
+
+print(InfLP.y)
 
 
 
 
+#TODO: Filter rows to only include those there the different copies of X (and of Y) are assigned distinct values.
 
 
 
-
-
-
+saturating_columns = np.flatnonzero(np.logical_not((np.abs(InfLP.checkY)>= 10**-8).todense()))
+#minimat = InfLP.inflation_matrix[:,saturating_columns]
+#np.linalg.matrix_rank(minimat.todense())
+#np.linalg.matrix_rank(InfLP.inflation_matrix.todense())
 

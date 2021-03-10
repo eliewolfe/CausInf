@@ -290,6 +290,7 @@ y, Fcondition, t, v = BellFacet(yRaw, InfMat, tol, numeric_b)
 # Scondition=IfSame(v_prime,old_v_primes)
 
 # if Fcondition and not Scondition:
+"""
 if Fcondition:
     FacetYs.append(y)
 
@@ -314,7 +315,7 @@ for i in range(len(All_kl)):
     y, Fcondition, t, v = BellFacet(yRaw, InfMat, tol, numeric_b)
     if Fcondition:
         FacetYs.append(y)
-
+"""
 """
     InflatedGraph(rawgraph,inflation_order).print_assessment()
     Solution=InflationLP(rawgraph, rawdata, card, inflation_order,extra_ex,solver).Inequality()

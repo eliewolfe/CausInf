@@ -753,6 +753,18 @@ class InflationLP(InflationProblem):
                        'gap'] / 10  # TODO: Choose better tolerance function. This is yielding false incompatibility claims.
         self.yRaw = np.array(self.solve['x']).ravel()
 
+        self.y = IntelligentRound(self.yRaw, self.inflation_matrix)
+
+        self.checkY = csr_matrix(self.y).dot(self.inflation_matrix)
+
+        self.idxtally=indextally(self.y)
+
+        self.symtally = symboltally(indextally(self.y), self.symbolic_b)
+
+        self.ineq_as_str = inequality_as_string(self.y, self.symbolic_b)
+
+
+
     def WitnessDataTest(self, y):
         IncompTest = (np.amin(y) < 0) and (np.dot(y, self.numeric_b) < -self.tol)
         if IncompTest:
@@ -760,6 +772,8 @@ class InflationLP(InflationProblem):
         else:
             print('Distribution Compatibility Status: COMPATIBLE')
         return IncompTest
+
+
 
 
     def Inequality(self,output=[]):
