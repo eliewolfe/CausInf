@@ -814,7 +814,7 @@ class InflationProblem(InflatedGraph, ObservationalData):
                 np.ndindex(newshape)]
 
     def _symbolic_marginal_product(self, lists_of_inflation_variables_indices):
-        s= list(starmap(chain, product(*map(self._symbolic_marginal, lists_of_inflation_variables_indices))))
+        s= list(itertools.starmap(itertools.chain, itertools.product(*map(self._symbolic_marginal, lists_of_inflation_variables_indices))))
         
         for i in range(len(s)):
             
