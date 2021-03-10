@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Wed Mar 10 12:04:18 2021
+Created on Mon Feb 15 17:34:32 2021
 
 @author: boraulu
 """
@@ -20,8 +20,8 @@ from internal_functions.inequality_internals import *
 from linear_program_options.moseklp import InfeasibilityCertificate
 # from linear_program_options.mosekinfeas import InfeasibilityCertificateAUTO
 # from linear_program_options.inflationlp import InflationLP
-# from classes import InflationProblem
-from infgraph import InflationProblem
+from classes import InflationProblem
+#from infgraph import InflationProblem
 
 if __name__ == '__main__':
     import sys
@@ -30,14 +30,14 @@ if __name__ == '__main__':
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 
-# def delete_rows_csr(mat, indices):
-#     """
-#     Remove the rows denoted by ``indices`` form the CSR sparse matrix ``mat``.
-#     """
-#     indices = list(indices)
-#     mask = np.ones(mat.shape[0], dtype=bool)
-#     mask[indices] = False
-#     return mat[mask]
+def delete_rows_csr(mat, indices):
+    """
+    Remove the rows denoted by ``indices`` form the CSR sparse matrix ``mat``.
+    """
+    indices = list(indices)
+    mask = np.ones(mat.shape[0], dtype=bool)
+    mask[indices] = False
+    return mat[mask]
 #
 # def MixedCardinalityBaseConversion(cardinality, string):
 #     card=[]
@@ -180,7 +180,7 @@ def BellFacet(yRaw, InMat, tol, numeric_b):
         ZeroColumns = np.where(np.abs(checkY.toarray().ravel()) <= 10 ** -10)[0]
         # SmallerInfMat=InfMat[:,ZeroColumns.tolist()]-csr_matrix(np.repeat(InfMat[:,ZeroColumns.tolist()[0]].toarray().ravel()[:,np.newaxis],len(InfMat[:,ZeroColumns.tolist()].toarray()[0]),1))
         SmallerInfMat = InfMat[:, ZeroColumns.tolist()]
-
+        OriginalRank = np.linalg.matrix_rank(InfMat.todense())
         SmallerRank = np.linalg.matrix_rank(SmallerInfMat.todense())
         print("----------------------")
         print(OriginalRank - SmallerRank)
@@ -227,8 +227,8 @@ def IfSame(v_prime, old_v_primes):
     return Same
 
 
-mB = 3
-mA = 3
+mB = 2
+mA = 2
 g = 0
 h = 0
 n = 0
@@ -237,24 +237,27 @@ FacetYs = []
 # old_v_primes=[]
 rawgraph = Graph.Formula("L->A:B,Ux->X,Uy->Y,X->A,Y->B")
 # for n in range(len(Gs)):
-card = [2, 2, 3, 3]
+card = [2, 2, 2, 2]
 rawdata = FindData(n, Gs, card)
 
 inflation_order = [1, 2, 2]
 """
 -----------------------------------------------------------------
 """
-InfProb = InflationProblem(rawgraph, rawdata, card, inflation_order)
-numeric_b = InfProb.numeric_b
-symbolic_b = InfProb.symbolic_b
-InfMat = InfProb.inflation_matrix
+#InfProb = InflationProblem(rawgraph, rawdata, card, inflation_order)
+#numeric_b = InfProb.numeric_b
+#symbolic_b = InfProb.symbolic_b
+#InfMat = InfProb.inflation_matrix
 
-# numeric_b,symbolic_b=InfProb.numeric_and_symbolic_b()
-# InfMat=csr_matrix(InfProb.InflationMatrix())
+InfProb=InflationProblem(rawgraph, rawdata, card, inflation_order)
+numeric_b,symbolic_b=InfProb.numeric_and_symbolic_b()
+InfMat=csr_matrix(InfProb.InflationMatrix())
+
 """
 ------------------------------------------------------------------
 """
 
+"""
 outcomes = np.vstack(
     np.unravel_index(InfProb.expressible_sets[0].which_rows_to_keep, InfProb.expressible_sets[0].shape_of_eset)).T
 meanings = InfProb.expressible_sets[0].from_inflation_indices[InfProb.expressible_sets[0].flat_eset]
@@ -273,6 +276,27 @@ symbolic_b = symbolic_b[rows_to_keep]
 InfMat = InfMat[rows_to_keep]
 InfMat = InfMat[:, InfMat.getnnz(0) > 0]
 OriginalRank = np.linalg.matrix_rank(InfMat.todense())
+"""
+
+marked_rows=[]
+
+for i in range(len(symbolic_b)):
+    
+    strat=symbolic_b[i]
+    
+    """
+    for card=[2,2,2,2] and inf_ord=[1,2,2] with classes.py:
+    """
+    
+    if strat[10]==strat[19] or strat[11]==strat[20]:
+        marked_rows.append(i)
+
+
+numeric_b=np.delete(numeric_b,marked_rows)
+symbolic_b=np.delete(symbolic_b,marked_rows)
+InfMat=delete_rows_csr(InfMat, marked_rows) 
+InfMat=InfMat[:,InfMat.getnnz(0)>0]
+
 
 # save_npz('Huge_Bell_InfMat',InfMat)
 # save_npz('Huge_Bell_b',csr_matrix(numeric_b))
