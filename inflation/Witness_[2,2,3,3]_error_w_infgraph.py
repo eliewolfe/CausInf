@@ -169,8 +169,8 @@ def WitnessDataTest(tol, numeric_b, y):
     return IncompTest
 
 
-def BellFacet(yRaw, InMat, tol, numeric_b):
-    #InfMat = csr_matrix(InMat)
+def BellFacet(yRaw, InfMat, tol, numeric_b):
+    #InfMat = csr_matrix(InfMat)
     if WitnessDataTest(tol, numeric_b, yRaw):
         y = IntelligentRound(yRaw, InfMat.asformat('csr', copy=False))
         checkY = csr_matrix(y.ravel()).dot(InfMat.asformat('csr', copy=False))
@@ -181,7 +181,12 @@ def BellFacet(yRaw, InMat, tol, numeric_b):
         # SmallerInfMat=InfMat[:,ZeroColumns.tolist()]-csr_matrix(np.repeat(InfMat[:,ZeroColumns.tolist()[0]].toarray().ravel()[:,np.newaxis],len(InfMat[:,ZeroColumns.tolist()].toarray()[0]),1))
         SmallerInfMat = InfMat[:, ZeroColumns.tolist()]
 
-        SmallerRank = np.linalg.matrix_rank(SmallerInfMat.todense())
+        if len(ZeroColumns) == InfMat.shape[-1]:
+            SmallerRank = OriginalRank
+        elif len(ZeroColumns) == 0:
+            SmallerRank = 0
+        else:
+            SmallerRank = np.linalg.matrix_rank(SmallerInfMat.todense())
         print("----------------------")
         print(OriginalRank - SmallerRank)
         if (OriginalRank - SmallerRank) == 1:

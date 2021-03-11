@@ -180,8 +180,12 @@ def BellFacet(yRaw, InMat, tol, numeric_b):
         ZeroColumns = np.where(np.abs(checkY.toarray().ravel()) <= 10 ** -10)[0]
         # SmallerInfMat=InfMat[:,ZeroColumns.tolist()]-csr_matrix(np.repeat(InfMat[:,ZeroColumns.tolist()[0]].toarray().ravel()[:,np.newaxis],len(InfMat[:,ZeroColumns.tolist()].toarray()[0]),1))
         SmallerInfMat = InfMat[:, ZeroColumns.tolist()]
-
-        SmallerRank = np.linalg.matrix_rank(SmallerInfMat.todense())
+        if len(ZeroColumns) == InfMat.shape[-1]:
+            SmallerRank = OriginalRank
+        elif len(ZeroColumns) == 0:
+            SmallerRank = 0
+        else:
+            SmallerRank = np.linalg.matrix_rank(SmallerInfMat.todense())
         print("----------------------")
         print(OriginalRank - SmallerRank)
         if (OriginalRank - SmallerRank) == 1:
@@ -189,6 +193,7 @@ def BellFacet(yRaw, InMat, tol, numeric_b):
             Facet = True
         elif (OriginalRank - SmallerRank) == 0:
             print('Yikes, this is an equality constraint.')
+            raise Exception('Equality constraint violation detected.')
             Facet = True
         else:
             # print(yRaw)
@@ -240,7 +245,7 @@ rawgraph = Graph.Formula("L->A:B,Ux->X,Uy->Y,X->A,Y->B")
 card = [2, 2, mA, mB]
 rawdata = FindData(n, Gs, card)
 
-inflation_order = [1, 2, 2]
+inflation_order = [1, 3, 3]
 """
 -----------------------------------------------------------------
 """
@@ -293,7 +298,7 @@ print(inequality_as_string(y, symbolic_b))
 # Scondition=IfSame(v_prime,old_v_primes)
 
 # if Fcondition and not Scondition:
-"""
+
 if Fcondition:
     FacetYs.append(y)
 
@@ -318,7 +323,7 @@ for i in range(len(All_kl)):
     y, Fcondition, t, v = BellFacet(yRaw, InfMat, tol, numeric_b)
     if Fcondition:
         FacetYs.append(y)
-"""
+
 """
     InflatedGraph(rawgraph,inflation_order).print_assessment()
     Solution=InflationLP(rawgraph, rawdata, card, inflation_order,extra_ex,solver).Inequality()
