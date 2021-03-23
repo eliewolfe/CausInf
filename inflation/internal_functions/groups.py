@@ -7,6 +7,8 @@ Input as permutations lists in numpy array format.
 
 import numpy as np
 import numba
+from sympy.combinatorics import Permutation
+from sympy.combinatorics.perm_groups import PermutationGroup
 #from numba.np.unsafe.ndarray import to_fixed_tuple
 
 
@@ -19,8 +21,14 @@ def is_vec_in_mat(vec, mat):
             break
     return assume
 
-
-
+def dimino_sympy(group_generators):
+    
+    gens=Permutation([list(gen) for gen in group_generators])
+    group=PermutationGroup(gens)
+    group_elements=list(group.generate_dimino(af=True))
+    group_elements_mat=np.vstack(tuple(group_elements))
+    
+    return group_elements_mat
 
 
 #@numba.njit

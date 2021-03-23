@@ -25,7 +25,7 @@ if __name__ == '__main__':
 
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from internal_functions.inequality_internals import *
-from internal_functions.groups import dimino_wolfe, minimize_object_under_group_action, orbits_of_object_under_group_action
+from internal_functions.groups import dimino_sympy,dimino_wolfe, minimize_object_under_group_action, orbits_of_object_under_group_action
 from internal_functions.utilities import MoveToFront, MoveToBack, SparseMatrixFromRowsPerColumn
 from linear_program_options.moseklp import InfeasibilityCertificate
 from linear_program_options.moseklp_dual import InfeasibilityCertificateAUTO
@@ -339,13 +339,17 @@ class InflatedGraph(LatentVariableGraph):
                     tuple(initialtranspose))[label_permutation].transpose(
                     tuple(inversetranspose)).flat[indices_to_extract]
             group_generators.append(group_generators_for_U)
-
+        
+        #print('group gens:')
+        #print(group_generators)
+        #print('----------')
         return group_generators
-
+    
     @cached_property
     def inflation_group_elements(self):
-        return np.array(dimino_wolfe(
-            np.vstack(self.inflation_group_generators)))
+        #return np.array(dimino_wolfe(
+         #   np.vstack(self.inflation_group_generators)))
+         return np.array(dimino_sympy([gen.ravel() for gen in self.inflation_group_generators]))
 
     @property
     def _InflateOneDeterminismAssumption(self):
@@ -442,6 +446,11 @@ class InflatedGraph(LatentVariableGraph):
             else:
                 return tensor
         def Generate_numeric_b_block(self, data_reshaped):
+            print('-----------')
+            print(data_reshaped)
+            print(self.all_original_indices)
+            print(self.partition_eset_original_indices)
+            print('-----------')
             marginals = (np.einsum(data_reshaped, self.all_original_indices, sub_eset) for sub_eset in self.partition_eset_original_indices)
             marginals = map(self._mult_or_div, self.composition_rule, marginals)
 
@@ -491,10 +500,12 @@ class InflatedGraph(LatentVariableGraph):
             self.from_inflation_indices, self.observed_names, self.original_observed_indices,
             symmetry_group = self.diagonal_expressible_set_symmetry_group
         )]
+
         for non_ai_eset in self.inflated_offdiagonal_expressible_sets:
-            X = list(non_ai_eset[1])
-            Y = list(non_ai_eset[0])
-            Z = list(non_ai_eset[2])
+
+            X = list([non_ai_eset[1]])
+            Y = list([non_ai_eset[0]])
+            Z = list([non_ai_eset[2]])
             results.append(self.ExpressibleSet(
                     [sorted(X+Y), sorted(X+Z), sorted(X)],
                     [+1, +1, -1],
@@ -702,8 +713,8 @@ class InflationProblem(InflatedGraph, ObservationalData):
         if len(self.expressible_sets)==1:
             return next(self._InflationMatrix)
         else:
-            return self.csr_vstack(list(self._InflationMatrix))
-
+            #return self.csr_vstack(list(self._InflationMatrix))
+            return sparse_vstack(list(self._InflationMatrix))
     @property
     def _NumericB(self):
         for eset in self.expressible_sets:

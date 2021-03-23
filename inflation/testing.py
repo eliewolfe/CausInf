@@ -88,12 +88,12 @@ data[MixedCardinalityBaseConversion(cardinality, '0123')]=0.05
 data[MixedCardinalityBaseConversion(cardinality, '1111')]=0.008
 data[MixedCardinalityBaseConversion(cardinality, '1130')]=0.03
 """
-#rawgraph=InstrumentalGraph 
-#rawdata=InstrumentalData2
-rawgraph=BellGraph
-rawdata=data
-card=[2,2,4,4]
-inflation_order=[1,3,3]
+rawgraph=InstrumentalGraph 
+rawdata=InstrumentalData
+#rawgraph=BellGraph
+#rawdata=data
+card=2
+inflation_order=[2,2]
 
 # extra_ex=True
 # solver='moseklp'
@@ -127,7 +127,7 @@ print(InfLP.y)
 
 
 
-saturating_columns = np.flatnonzero(np.logical_not((np.abs(InfLP.checkY)>= 10**-8).todense()))
+#saturating_columns = np.flatnonzero(np.logical_not((np.abs(InfLP.checkY)>= 10**-8).todense()))
 #minimat = InfLP.inflation_matrix[:,saturating_columns]
 #np.linalg.matrix_rank(minimat.todense())
 #np.linalg.matrix_rank(InfLP.inflation_matrix.todense())
