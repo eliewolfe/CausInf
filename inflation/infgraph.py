@@ -509,7 +509,7 @@ class InflatedGraph(LatentVariableGraph):
             results.append(self.ExpressibleSet(
                     [sorted(X+Y), sorted(X+Z), sorted(X)],
                     [+1, +1, -1],
-            self.from_inflation_indices, self.observed_names, self.observed_indices))
+            self.from_inflation_indices, self.observed_names, self.original_observed_indices))
         return results
 
 
