@@ -338,7 +338,11 @@ class InflatedGraph(LatentVariableGraph):
                 group_generators_for_U[gen_idx] = gloablstrategybroadcast.transpose(
                     tuple(initialtranspose))[label_permutation].transpose(
                     tuple(inversetranspose)).flat[indices_to_extract]
+            #print(group_generators_for_U)
             group_generators.append(group_generators_for_U)
+        #print('In infgraph')
+        #print(group_generators)
+        #print(group_generators)
         
         #print('group gens:')
         #print(group_generators)
@@ -349,7 +353,7 @@ class InflatedGraph(LatentVariableGraph):
     def inflation_group_elements(self):
         #return np.array(dimino_wolfe(
          #   np.vstack(self.inflation_group_generators)))
-         return np.array(dimino_sympy([gen.ravel() for gen in self.inflation_group_generators]))
+         return np.array(dimino_sympy([gen.ravel() for gen in np.vstack(self.inflation_group_generators)]))
 
     @property
     def _InflateOneDeterminismAssumption(self):
@@ -358,6 +362,8 @@ class InflatedGraph(LatentVariableGraph):
             XsY = np.array(list(screening[2]) + list(screening[1])) - self.latent_count
             flatset_original_world = np.take(self.canonical_world, XsY)
             symops = [self.inflation_group_generators[U1][0] for U1 in U1s]  # Now 2d array
+            #print(symops)
+            #print(flatset_original_world)
             flatset_new_world = np.take(reduce(np.take, symops), flatset_original_world)
             rule = np.vstack((flatset_original_world, flatset_new_world)).T.astype('uint32')
             rule = rule[:-1, :].T.tolist() + rule[-1, :].T.tolist()
@@ -446,11 +452,6 @@ class InflatedGraph(LatentVariableGraph):
             else:
                 return tensor
         def Generate_numeric_b_block(self, data_reshaped):
-            print('-----------')
-            print(data_reshaped)
-            print(self.all_original_indices)
-            print(self.partition_eset_original_indices)
-            print('-----------')
             marginals = (np.einsum(data_reshaped, self.all_original_indices, sub_eset) for sub_eset in self.partition_eset_original_indices)
             marginals = map(self._mult_or_div, self.composition_rule, marginals)
 

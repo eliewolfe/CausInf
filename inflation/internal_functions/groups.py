@@ -22,7 +22,8 @@ def is_vec_in_mat(vec, mat):
     return assume
 
 def dimino_sympy(group_generators):
-    
+    print('in groups:')
+    print(group_generators)
     gens=Permutation([list(gen) for gen in group_generators])
     group=PermutationGroup(gens)
     group_elements=list(group.generate_dimino(af=True))
