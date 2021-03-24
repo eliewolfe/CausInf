@@ -22,14 +22,14 @@ def is_vec_in_mat(vec, mat):
     return assume
 
 def dimino_sympy(group_generators):
-    print('in groups:')
-    print(group_generators)
-    gens=Permutation([list(gen) for gen in group_generators])
+
+    gens=[]
+    for gen in group_generators:
+        gens.append(Permutation(list(gen)))
     group=PermutationGroup(gens)
     group_elements=list(group.generate_dimino(af=True))
-    group_elements_mat=np.vstack(tuple(group_elements))
-    
-    return group_elements_mat
+
+    return group_elements
 
 
 #@numba.njit
@@ -56,6 +56,7 @@ def dimino_wolfe(group_generators):
                             ap = d[ag]
                             element_list.append(ap)
                             N.append(ap)
+    #print(element_list)
     return element_list
 
 

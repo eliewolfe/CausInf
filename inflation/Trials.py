@@ -304,6 +304,7 @@ if Fcondition:
 
 epsilon = (2 / 3) / 4
 All_kl = list(permutations(t, 2))
+"""
 for i in range(len(All_kl)):
     k = All_kl[i][0]
     l = All_kl[i][1]
@@ -323,7 +324,7 @@ for i in range(len(All_kl)):
     y, Fcondition, t, v = BellFacet(yRaw, InfMat, tol, numeric_b)
     if Fcondition:
         FacetYs.append(y)
-
+"""
 """
     InflatedGraph(rawgraph,inflation_order).print_assessment()
     Solution=InflationLP(rawgraph, rawdata, card, inflation_order,extra_ex,solver).Inequality()

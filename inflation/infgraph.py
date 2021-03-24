@@ -351,9 +351,11 @@ class InflatedGraph(LatentVariableGraph):
     
     @cached_property
     def inflation_group_elements(self):
+        #np.array(dimino_sympy([gen for gen in np.vstack(self.inflation_group_generators)]))
         #return np.array(dimino_wolfe(
          #   np.vstack(self.inflation_group_generators)))
-         return np.array(dimino_sympy([gen.ravel() for gen in np.vstack(self.inflation_group_generators)]))
+         
+         return np.array(dimino_sympy([gen for gen in np.vstack(self.inflation_group_generators)]))
 
     @property
     def _InflateOneDeterminismAssumption(self):
