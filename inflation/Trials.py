@@ -186,8 +186,9 @@ def BellFacet(yRaw, InMat, tol, numeric_b):
             SmallerRank = 0
         else:
             SmallerRank = np.linalg.matrix_rank(SmallerInfMat.todense())
+            print(SmallerRank)
         print("----------------------")
-        print(OriginalRank - SmallerRank)
+        RankDifferences.append(OriginalRank - SmallerRank)
         if (OriginalRank - SmallerRank) == 1:
             print('FOUND IT!')
             Facet = True
@@ -244,7 +245,7 @@ rawgraph = Graph.Formula("L->A:B,Ux->X,Uy->Y,X->A,Y->B")
 # for n in range(len(Gs)):
 card = [2, 2, mA, mB]
 rawdata = FindData(n, Gs, card)
-
+RankDifferences=[]
 inflation_order = [1, 3, 3]
 """
 -----------------------------------------------------------------
@@ -304,7 +305,7 @@ if Fcondition:
 
 epsilon = (2 / 3) / 4
 All_kl = list(permutations(t, 2))
-"""
+
 for i in range(len(All_kl)):
     k = All_kl[i][0]
     l = All_kl[i][1]
@@ -324,7 +325,7 @@ for i in range(len(All_kl)):
     y, Fcondition, t, v = BellFacet(yRaw, InfMat, tol, numeric_b)
     if Fcondition:
         FacetYs.append(y)
-"""
+
 """
     InflatedGraph(rawgraph,inflation_order).print_assessment()
     Solution=InflationLP(rawgraph, rawdata, card, inflation_order,extra_ex,solver).Inequality()
