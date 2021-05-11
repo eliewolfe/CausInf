@@ -12,3 +12,5 @@ __pycache__/
 sphinx/build/
 
 doc/build/
+
+older versions/
