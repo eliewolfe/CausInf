@@ -24,12 +24,12 @@ if __name__ == '__main__':
     import pathlib
 
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from internal_functions.inequality_internals import *
-from internal_functions.groups import dimino_sympy,dimino_wolfe, minimize_object_under_group_action, orbits_of_object_under_group_action
-from internal_functions.utilities import MoveToFront, MoveToBack, SparseMatrixFromRowsPerColumn
-from linear_program_options.moseklp import InfeasibilityCertificate
-from linear_program_options.moseklp_dual import InfeasibilityCertificateAUTO
-from linear_program_options.cvxopt import InflationLP
+from inflation.internal_functions.inequality_internals import *
+from inflation.internal_functions.groups import dimino_sympy,dimino_wolfe, minimize_object_under_group_action, orbits_of_object_under_group_action
+from inflation.internal_functions.utilities import MoveToFront, MoveToBack, SparseMatrixFromRowsPerColumn
+from inflation.linear_program_options.moseklp import InfeasibilityCertificate
+from inflation.linear_program_options.moseklp_dual import InfeasibilityCertificateAUTO
+from inflation.linear_program_options.cvxopt import InflationLP
 
 #from methodtools import lru_cache
 
@@ -421,7 +421,7 @@ class InflatedGraph(LatentVariableGraph):
             self.flat_eset, self._low_indices_flat_uncompressed = np.unique(
                 np.hstack(self.partitioned_eset_inflated_indices), return_inverse=True)
 
-            self._posts = [str(rule).replace('1', '').replace('-1', '^(-1)') for rule in self.composition_rule]
+            self._posts = [str(rule).replace('1', '').replace('-', '^(-1)') for rule in self.composition_rule]
 
             self.symbolic_wrappers = ['P[' + ''.join(np.take(self.observed_names, sub_eset).tolist()) + ']{}' + post for
                                       sub_eset, post in zip(self.partition_eset_original_indices, self._posts)]
