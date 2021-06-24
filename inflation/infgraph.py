@@ -25,7 +25,7 @@ if __name__ == '__main__':
 
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from inflation.internal_functions.inequality_internals import *
-from inflation.internal_functions.groups import dimino_sympy,dimino_wolfe, minimize_object_under_group_action, orbits_of_object_under_group_action
+from inflation.internal_functions.groups import dimino_sympy, minimize_object_under_group_action, orbits_of_object_under_group_action
 from inflation.internal_functions.utilities import MoveToFront, MoveToBack, SparseMatrixFromRowsPerColumn
 from inflation.linear_program_options.moseklp import InfeasibilityCertificate
 from inflation.linear_program_options.moseklp_dual import InfeasibilityCertificateAUTO
