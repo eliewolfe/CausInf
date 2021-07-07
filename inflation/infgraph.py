@@ -345,7 +345,7 @@ class InflatedGraph(LatentVariableGraph):
         #print(group_generators)
         
         #print('group gens:')
-        #print(group_generators)
+        print('old gens:',group_generators)
         #print('----------')
         return group_generators
     
@@ -765,7 +765,7 @@ class InflationLP(InflationProblem):
 
             self.solve = InfeasibilityCertificateAUTO(self.inflation_matrix, self.numeric_b)
 
-        self.tol = -self.solve[
+        self.tol = self.solve[
                        'gap'] / 10 # TODO: Choose better tolerance function. This is yielding false incompatibility claims.
                        
         
