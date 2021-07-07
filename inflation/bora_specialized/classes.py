@@ -26,7 +26,7 @@ if __name__ == '__main__':
 
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from internal_functions.inequality_internals import *
-from internal_functions.groups import dimino_wolfe, minimize_object_under_group_action, orbits_of_object_under_group_action
+from internal_functions.groups import dimino_sympy, minimize_object_under_group_action, orbits_of_object_under_group_action
 from internal_functions.utilities import MoveToFront, PositionIndex, MoveToBack, SparseMatrixFromRowsPerColumn
 from linear_program_options.moseklp import InfeasibilityCertificate
 from linear_program_options.moseklp_dual import InfeasibilityCertificateAUTO
@@ -344,7 +344,7 @@ class InflatedGraph(LatentVariableGraph):
 
     @cached_property
     def inflation_group_elements(self):
-        return np.array(dimino_wolfe(
+        return np.array(dimino_sympy(
             np.vstack(self.inflation_group_generators)))
 
     

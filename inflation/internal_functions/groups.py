@@ -29,7 +29,7 @@ def dimino_sympy(group_generators):
     return group_elements
 
 
-# #@numba.njit
+ #@numba.njit
 # def dimino_wolfe(group_generators):
 #     gens = group_generators
 #     degree = np.max(gens) + 1

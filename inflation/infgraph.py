@@ -19,18 +19,18 @@ else:
     cached_property = property
 from functools import reduce
 
-if __name__ == '__main__':
-    import sys
-    import pathlib
 
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-from inflation.internal_functions.inequality_internals import *
-from inflation.internal_functions.groups import dimino_sympy, minimize_object_under_group_action, orbits_of_object_under_group_action
-from inflation.internal_functions.utilities import MoveToFront, MoveToBack, SparseMatrixFromRowsPerColumn
-from inflation.linear_program_options.moseklp import InfeasibilityCertificate
-from inflation.linear_program_options.moseklp_dual import InfeasibilityCertificateAUTO
-from inflation.linear_program_options.cvxopt import InflationLP
+import sys
+import pathlib
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from internal_functions.inequality_internals import *
+from internal_functions.groups import dimino_sympy, minimize_object_under_group_action, orbits_of_object_under_group_action
+from internal_functions.utilities import MoveToFront, MoveToBack, SparseMatrixFromRowsPerColumn
+from linear_program_options.moseklp import InfeasibilityCertificate
+from linear_program_options.moseklp_dual import InfeasibilityCertificateAUTO
+from linear_program_options.cvxopt import InflationLP
+from internal_functions.unique_product import unique_product
 #from methodtools import lru_cache
 
 
@@ -264,20 +264,20 @@ class InflatedGraph(LatentVariableGraph):
         return temp
 
 
-    @cached_property
-    def diagonal_expressible_set_symmetry_group(self):
-        when_sorted = np.argsort(np.hstack(self.partitioned_expressible_set))
-        it = iter(when_sorted)
-        _canonical_pos2 = [list(itertools.islice(it, size)) for size in self.inflation_minima]
+    #@cached_property
+    #def diagonal_expressible_set_symmetry_group(self):
+    #    when_sorted = np.argsort(np.hstack(self.partitioned_expressible_set))
+    #    it = iter(when_sorted)
+    #    _canonical_pos2 = [list(itertools.islice(it, size)) for size in self.inflation_minima]
 
-        unfiltered_variants = np.array([np.hstack(np.vstack(perm).T) for perm in
-                                        itertools.permutations(itertools.zip_longest(*_canonical_pos2, fillvalue=-1))])
-        expressible_set_variants_filter = np.add(unfiltered_variants, 1).astype(np.bool)
-        unfiltered_variants = unfiltered_variants.compress(
-            (expressible_set_variants_filter == np.atleast_2d(expressible_set_variants_filter[0])).all(axis=1),
-            axis=0)
-        filtered_variants = np.array([eset.compress(np.add(eset, 1).astype(np.bool)) for eset in unfiltered_variants])
-        return np.take_along_axis(np.argsort(filtered_variants,axis=1), np.atleast_2d(when_sorted),   axis=1)
+    #    unfiltered_variants = np.array([np.hstack(np.vstack(perm).T) for perm in
+    #                                    itertools.permutations(itertools.zip_longest(*_canonical_pos2, fillvalue=-1))])
+    #    expressible_set_variants_filter = np.add(unfiltered_variants, 1).astype(np.bool)
+    #    unfiltered_variants = unfiltered_variants.compress(
+    #        (expressible_set_variants_filter == np.atleast_2d(expressible_set_variants_filter[0])).all(axis=1),
+    #        axis=0)
+    #    filtered_variants = np.array([eset.compress(np.add(eset, 1).astype(np.bool)) for eset in unfiltered_variants])
+    #    return np.take_along_axis(np.argsort(filtered_variants,axis=1), np.atleast_2d(when_sorted),   axis=1)
 
     # @cached_property
     # def expressible_set_variants(self):
@@ -408,10 +408,10 @@ class InflatedGraph(LatentVariableGraph):
  
     class ExpressibleSet:
         # WORK IN PROGRESS
-        def __init__(self, partitioned_eset_inflated_indices, composition_rule, from_inflation_indices, observed_names, original_observed_indices, symmetry_group=[]):
+        def __init__(self, partitioned_eset_inflated_indices, composition_rule, from_inflation_indices, observed_names, original_observed_indices):
             self.partitioned_eset_inflated_indices = partitioned_eset_inflated_indices
             self.composition_rule = composition_rule
-            self.symmetry_group = symmetry_group #NOTE: The symmetry group must act on the FLAT version of the eSET. I'm not sure we have this at the moment.
+            #self.symmetry_group = symmetry_group #NOTE: The symmetry group must act on the FLAT version of the eSET. I'm not sure we have this at the moment.
             self.from_inflation_indices = from_inflation_indices
             self.observed_names = observed_names
             self.all_original_indices = original_observed_indices
@@ -500,8 +500,7 @@ class InflatedGraph(LatentVariableGraph):
         results = [self.ExpressibleSet(
             self.partitioned_expressible_set,
             np.ones(len(self.partitioned_expressible_set), dtype=np.int),
-            self.from_inflation_indices, self.observed_names, self.original_observed_indices,
-            symmetry_group = self.diagonal_expressible_set_symmetry_group
+            self.from_inflation_indices, self.observed_names, self.original_observed_indices
         )]
 
         for non_ai_eset in self.inflated_offdiagonal_expressible_sets:
@@ -646,13 +645,16 @@ class InflationProblem(InflatedGraph, ObservationalData):
         #Now we need to cache the relevant properties of an expressible set.
 
         for eset in self.expressible_sets:
+
             eset.shape_of_eset = np.take(self.inflated_cardinalities_array, eset.flat_eset)
             eset.size_of_eset = eset.shape_of_eset.prod()
-            eset.which_rows_to_keep = np.arange(eset.size_of_eset).reshape(eset.shape_of_eset)
-            minimize_object_under_group_action(
-                eset.which_rows_to_keep,
-                eset.symmetry_group, skip=1)
-            eset.which_rows_to_keep = np.unique(eset.which_rows_to_keep.ravel(), return_index=True)[1]
+            eset.which_rows_to_keep = unique_product(eset.partition_eset_original_indices, tuple(
+            [np.take(self.original_cardinalities_tuple, variables).prod() for variables in eset.partition_eset_original_indices]))
+            #eset.which_rows_to_keep = np.arange(eset.size_of_eset).reshape(eset.shape_of_eset)
+            #minimize_object_under_group_action(
+            #    eset.which_rows_to_keep,
+            #    eset.symmetry_group, skip=1)
+            #eset.which_rows_to_keep = np.unique(eset.which_rows_to_keep.ravel(), return_index=True)[1]
             eset.size_of_eset_after_symmetry = len(eset.which_rows_to_keep)
             eset.there_are_discarded_rows = (eset.size_of_eset_after_symmetry < eset.size_of_eset)
             eset.discarded_rows_to_the_back = np.full(eset.size_of_eset, eset.size_of_eset_after_symmetry, dtype=np.int)
@@ -763,8 +765,10 @@ class InflationLP(InflationProblem):
 
             self.solve = InfeasibilityCertificateAUTO(self.inflation_matrix, self.numeric_b)
 
-        self.tol = self.solve[
-                       'gap'] / 10  # TODO: Choose better tolerance function. This is yielding false incompatibility claims.
+        self.tol = -self.solve[
+                       'gap'] / 10 # TODO: Choose better tolerance function. This is yielding false incompatibility claims.
+                       
+        
         self.yRaw = np.array(self.solve['x']).ravel()
 
         self.y = IntelligentRound(self.yRaw, self.inflation_matrix)
@@ -780,6 +784,7 @@ class InflationLP(InflationProblem):
 
 
     def WitnessDataTest(self, y):
+        print(np.dot(y, self.numeric_b),'------------')
         IncompTest = (np.amin(y) < 0) and (np.dot(y, self.numeric_b) < -self.tol)
         if IncompTest:
             print('Distribution Compatibility Status: INCOMPATIBLE')
@@ -896,11 +901,12 @@ if __name__ == '__main__':
     TriangleGraph = Graph.Formula("X->A,Y->A:B,Z->B:C,X->C")
     #[InflatedGraph(g, [2, 3, 3]).print_assessment() for g in
     #    (TriangleGraph, Evans14a, Evans14b, Evans14c, IceCreamGraph, BiconfoundingInstrumental)]
-
-    testig = InflatedGraph(TriangleGraph, [2, 3, 3])
-    testig.print_assessment()
+    rawdata = np.array([0.12199995751046305, 0.0022969343799089472, 0.001748319476328954, 3.999015242496535e-05, 0.028907881434196828, 0.0005736087488455967, 0.0003924033706699725, 1.1247230369521505e-05, 0.0030142577390317635, 0.09234476010282468, 4.373922921480586e-05, 0.0014533921021948346, 0.0007798079722868244, 0.024091567451515063, 1.1247230369521505e-05, 0.0003849052170902915, 0.020774884184769502, 0.000396152447459813, 0.0003049249122403608, 4.998769053120669e-06, 0.10820335492385, 0.0020794879260981982, 0.0015546171755205281, 2.4993845265603346e-05, 0.0006260958239033638, 0.020273757587194154, 7.498153579681003e-06, 0.0003374169110856452, 0.0028942872817568676, 0.08976414557915113, 2.624353752888351e-05, 0.0012984302615480939, 0.002370666223442477, 4.7488306004646356e-05, 0.0999928767540993, 0.001957018084296742, 0.0006198473625869629, 8.747845842961171e-06, 0.02636975644747481, 0.0005198719815245496, 1.4996307159362007e-05, 0.000403650601039494, 0.0005498645958432735, 0.017359475229224805, 7.123245900696953e-05, 0.002346922070440154, 0.0033754188031197316, 0.10295964618712641, 0.00038740460161685187, 7.498153579681003e-06, 0.01608353942841575, 0.000306174604503641, 0.0021319750011559654, 4.248953695152569e-05, 0.09107007399427891, 0.001860791780024169, 5.998522863744803e-05, 0.0018395470115484063, 0.002570616985567304, 0.0766411271224461, 1.874538394920251e-05, 0.00048238121362614454, 0.0006410921310627258, 0.020223769896662948])
+    card = 4
+    inflation_orders = 2
+    inequality = InflationLP(TriangleGraph, rawdata, card, inflation_orders, solver = 'moseklp').Inequality()
+    #testig = InflatedGraph(TriangleGraph, [2, 3, 3])
+    #testig.print_assessment()
     #print(testig._canonical_pos)
-    print(testig.partitioned_expressible_set)
-    print(testig.diagonal_expressible_set)
-    print(testig.diagonal_expressible_set_symmetry_group)
-    print(testig.diagonal_expressible_set.take(testig.diagonal_expressible_set_symmetry_group))
+    #print(testig.partitioned_expressible_set)
+    #print(testig.diagonal_expressible_set)
