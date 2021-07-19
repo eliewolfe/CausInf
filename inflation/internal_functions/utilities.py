@@ -64,6 +64,8 @@ def SparseMatrixFromRowsPerColumn(OnesPositions, sort_columns=True):
     columncount = OnesPositions.shape[-1]
     rowcount = int(np.amax(OnesPositions)) + 1
     if sort_columns:
+        OnesPositions.sort(axis=0)
+        OnesPositions = OnesPositions[:, np.lexsort(OnesPositions)]
         ar_to_broadcast = np.lexsort(OnesPositions)
     else:
         ar_to_broadcast = np.arange(columncount)

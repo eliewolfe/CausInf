@@ -345,7 +345,6 @@ class InflatedGraph(LatentVariableGraph):
         #print(group_generators)
         
         #print('group gens:')
-        print('old gens:',group_generators)
         #print('----------')
         return group_generators
     
@@ -354,7 +353,6 @@ class InflatedGraph(LatentVariableGraph):
         #np.array(dimino_sympy([gen for gen in np.vstack(self.inflation_group_generators)]))
         #return np.array(dimino_wolfe(
          #   np.vstack(self.inflation_group_generators)))
-         
          return np.array(dimino_sympy([gen for gen in np.vstack(self.inflation_group_generators)]))
 
     @property
@@ -410,6 +408,7 @@ class InflatedGraph(LatentVariableGraph):
         # WORK IN PROGRESS
         def __init__(self, partitioned_eset_inflated_indices, composition_rule, from_inflation_indices, observed_names, original_observed_indices):
             self.partitioned_eset_inflated_indices = partitioned_eset_inflated_indices
+            self.flat_eset = np.hstack(self.partitioned_eset_inflated_indices)
             self.composition_rule = composition_rule
             #self.symmetry_group = symmetry_group #NOTE: The symmetry group must act on the FLAT version of the eSET. I'm not sure we have this at the moment.
             self.from_inflation_indices = from_inflation_indices
@@ -418,7 +417,7 @@ class InflatedGraph(LatentVariableGraph):
 
             self.partition_eset_original_indices = list(map(self.from_inflation_indices.take, self.partitioned_eset_inflated_indices))
 
-            self.flat_eset, self._low_indices_flat_uncompressed = np.unique(
+            self.flat_eset_sorted, self._low_indices_flat_uncompressed = np.unique(
                 np.hstack(self.partitioned_eset_inflated_indices), return_inverse=True)
 
             self._posts = [str(rule).replace('1', '').replace('-', '^(-1)') for rule in self.composition_rule]
@@ -657,8 +656,9 @@ class InflationProblem(InflatedGraph, ObservationalData):
             #eset.which_rows_to_keep = np.unique(eset.which_rows_to_keep.ravel(), return_index=True)[1]
             eset.size_of_eset_after_symmetry = len(eset.which_rows_to_keep)
             eset.there_are_discarded_rows = (eset.size_of_eset_after_symmetry < eset.size_of_eset)
-            eset.discarded_rows_to_the_back = np.full(eset.size_of_eset, eset.size_of_eset_after_symmetry, dtype=np.int)
-            np.put(eset.discarded_rows_to_the_back, eset.which_rows_to_keep, np.arange(eset.size_of_eset_after_symmetry))
+            #eset.discarded_rows_to_the_back = np.full(eset.size_of_eset, eset.size_of_eset_after_symmetry, dtype=np.int)
+            eset.discarded_rows_to_the_back = np.full(eset.size_of_eset, 0, dtype=np.int)
+            np.put(eset.discarded_rows_to_the_back, eset.which_rows_to_keep, np.arange(eset.size_of_eset_after_symmetry)+1)
 
         print(len(self.expressible_sets), 'expressible sets have been computed. Now constructing objects.')
 
@@ -708,11 +708,13 @@ class InflationProblem(InflatedGraph, ObservationalData):
         for eset in self.expressible_sets:
             AMatrix = eset.discarded_rows_to_the_back.take(
                 eset.Columns_to_unique_rows(self.shaped_column_integers)).take(self.valid_column_orbits)
+            eset.AMatrices = AMatrix
             AMatrix = SparseMatrixFromRowsPerColumn(AMatrix).asformat('csr', copy=False)
-            if eset.there_are_discarded_rows:
-                yield AMatrix[:-1]
-            else:
-                yield AMatrix
+            yield AMatrix[1:]
+            #if eset.there_are_discarded_rows:
+            #    yield AMatrix[:-1]
+            #else:
+            #    yield AMatrix
     @cached_property
     def inflation_matrix(self):
         if len(self.expressible_sets)==1:
@@ -764,13 +766,13 @@ class InflationLP(InflationProblem):
         elif solver == 'mosekAUTO':
 
             self.solve = InfeasibilityCertificateAUTO(self.inflation_matrix, self.numeric_b)
-
-        self.tol = self.solve[
-                       'gap'] / 10 # TODO: Choose better tolerance function. This is yielding false incompatibility claims.
                        
         
         self.yRaw = np.array(self.solve['x']).ravel()
-
+        checkY = csr_matrix(self.yRaw).dot(self.InfMat)
+        self.tol = checkY.min()*10
+        print('Tolerance:',self.tol)        
+        
         self.y = IntelligentRound(self.yRaw, self.inflation_matrix)
 
         self.checkY = csr_matrix(self.y).dot(self.inflation_matrix)
@@ -785,7 +787,7 @@ class InflationLP(InflationProblem):
 
     def WitnessDataTest(self, y):
         print(np.dot(y, self.numeric_b),'------------')
-        IncompTest = (np.amin(y) < 0) and (np.dot(y, self.numeric_b) < -self.tol)
+        IncompTest = (np.amin(y) < 0) and (np.dot(y, self.numeric_b) < -abs(self.tol))
         if IncompTest:
             print('Distribution Compatibility Status: INCOMPATIBLE')
         else:
@@ -843,7 +845,8 @@ class InflationLP(InflationProblem):
                 
             return returntouser
         else:
-            return print('Compatibility Error: The input distribution is compatible with given inflation order test.')
+            print('Compatibility Error: The input distribution is compatible with given inflation order test.')
+            return self.yRaw
 
 
 class SupportCertificate(InflationProblem):
